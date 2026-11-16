@@ -1,4 +1,4 @@
-name: Deploy PWA to GitHub Pages
+name: Test & Sync GitHub Pages
 
 on:
   push:
@@ -6,29 +6,26 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
+  contents: write
 
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  test-and-publish:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
         with:
-          path: "./web"
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          fetch-depth: 0
+
+      - name: Run Python backend & ICS tests
+        run: QUIET_LOGS=1 python3 -m unittest discover -s tests -v
+
+      - name: Run Node frontend & standalone serverless tests
+        run: node tests/test_frontend_logic.mjs
+
+      - name: Sync web/ directory to gh-pages branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          SPLIT_SHA=$(git subtree split --prefix web HEAD)
+          git push origin "$SPLIT_SHA:refs/heads/gh-pages" --force
