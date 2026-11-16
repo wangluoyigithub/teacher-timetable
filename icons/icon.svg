@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#235E47"/>
+  <rect x="64" y="80" width="384" height="360" rx="40" fill="#FAF7F0"/>
+  <rect x="64" y="80" width="384" height="88" rx="40" fill="#DDF0E7"/>
+  <rect x="64" y="132" width="384" height="36" fill="#DDF0E7"/>
+  <circle cx="148" cy="80" r="18" fill="#1A4735"/>
+  <circle cx="364" cy="80" r="18" fill="#1A4735"/>
+  <rect x="140" y="48" width="16" height="48" rx="8" fill="#FAF7F0"/>
+  <rect x="356" y="48" width="16" height="48" rx="8" fill="#FAF7F0"/>
+  <!-- Timetable blocks -->
+  <rect x="104" y="200" width="136" height="60" rx="14" fill="#2E7D5B"/>
+  <rect x="268" y="200" width="140" height="60" rx="14" fill="#E8925B"/>
+  <rect x="104" y="282" width="136" height="60" rx="14" fill="#5282B8"/>
+  <rect x="268" y="282" width="140" height="60" rx="14" fill="#DCE4DF"/>
+  <rect x="104" y="364" width="304" height="40" rx="12" fill="#EFECE4"/>
+</svg>
