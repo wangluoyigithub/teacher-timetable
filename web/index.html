@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>知时课表 · 教师极简智能课程表 (PWA)</title>
+  <meta name="description" content="专为中小学与职校教师打造的极简智能课程表 PWA：Web端一屏总览、今日上完自动预览明日课程、拍照AI识别导入、支持iPhone日历准时提醒与桌面小组件。" />
+  <meta name="theme-color" content="#235E47" id="meta-theme-color" />
+
+  <!-- iOS Safari PWA Home Screen Support -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="知时课表" />
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+
+  <link rel="stylesheet" href="/styles/index.css" />
+</head>
+<body data-mobile-tab="today">
+  <!-- Top Navigation Header -->
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand-group">
+        <img src="/icons/icon.svg" alt="知时课表图标" class="brand-logo" />
+        <div class="brand-titles">
+          <h1>
+            <span>知时课表</span>
+            <button type="button" class="sync-pill" id="btn-sync-pill" title="6位同步码多端同步">
+              <span class="sync-dot"></span>
+              <span id="sync-pill-text">本地离线 · 点此同步</span>
+            </button>
+          </h1>
+          <div class="brand-subtitle" id="header-subtitle">加载课表中...</div>
+        </div>
+      </div>
+
+      <nav class="topbar-actions" aria-label="主工具栏">
+        <button type="button" class="btn btn-primary" id="btn-open-ocr">
+          <span>📸 拍照加课</span>
+        </button>
+        <button type="button" class="btn btn-amber" id="btn-open-ios">
+          <span>📱 iPhone 提醒与组件</span>
+        </button>
+        <button type="button" class="btn hide-mobile" id="btn-open-settings">
+          <span>⏰ 作息与设置</span>
+        </button>
+        <button type="button" class="btn btn-ghost hide-mobile" id="btn-print" title="打印或导出PDF课表">
+          <span>🖨️ 打印</span>
+        </button>
+        <button type="button" class="btn btn-ghost" id="btn-theme-toggle" title="切换浅色/深色模式" aria-label="切换主题">
+          <span id="theme-icon">🌙</span>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <main class="workspace">
+    <!-- Left Focus Rail (Desktop Sticky Rail / Mobile Default Today-Tomorrow View) -->
+    <aside class="focus-rail" aria-label="今日与明日课程聚焦">
+      <!-- Time Simulation Switcher so teachers/testers can verify Today -> Tomorrow switch immediately -->
+      <div class="sim-bar">
+        <span class="sim-bar-label">🕒 状态预览</span>
+        <div class="sim-pills" role="group" aria-label="时间状态模拟">
+          <button type="button" class="sim-pill active" data-sim="live" id="sim-btn-live">实时</button>
+          <button type="button" class="sim-pill" data-sim="morning" id="sim-btn-morning">08:20上课</button>
+          <button type="button" class="sim-pill" data-sim="afterschool" id="sim-btn-after">20:30结课后</button>
+        </div>
+      </div>
+
+      <!-- Mobile Quick Day Selector -->
+      <div class="mobile-day-strip" id="mobile-day-strip"></div>
+
+      <!-- Smart Today ⇄ Tomorrow Card -->
+      <section class="card" id="focus-card-container" aria-live="polite"></section>
+
+      <!-- Class Color Legend & Spotlight Filter -->
+      <section class="card" id="class-filter-card">
+        <div class="class-chips-title">
+          <span>🎨 授课班级着色（点击高亮筛选）</span>
+          <button type="button" class="btn btn-ghost btn-sm" id="btn-clear-spotlight" style="display:none;">显示全部</button>
+        </div>
+        <div class="class-chips-wrap" id="class-chips-wrap"></div>
+      </section>
+    </aside>
+
+    <!-- Main Full-Week Timetable Grid Stage -->
+    <section class="grid-stage" aria-label="整周课程表总览">
+      <div class="grid-toolbar">
+        <div class="week-nav">
+          <button type="button" class="btn btn-sm" id="btn-prev-week" aria-label="上一周">◀</button>
+          <span class="week-label" id="week-nav-label">第 1 周</span>
+          <button type="button" class="btn btn-sm" id="btn-next-week" aria-label="下一周">▶</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="btn-reset-week">回到本周</button>
+        </div>
+
+        <div class="grid-toggles">
+          <button type="button" class="toggle-chip on" id="toggle-morning-read">早读</button>
+          <button type="button" class="toggle-chip on" id="toggle-evening">晚自习</button>
+          <button type="button" class="toggle-chip" id="toggle-weekend">周末</button>
+          <button type="button" class="btn btn-sm" id="btn-quick-add-lesson">+ 添加课程</button>
+        </div>
+      </div>
+
+      <div class="timetable-scroll">
+        <table class="timetable-table" id="weekly-table">
+          <thead id="weekly-thead"></thead>
+          <tbody id="weekly-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- Mobile Bottom Navigation Bar -->
+  <nav class="mobile-tabbar" aria-label="移动端底部导航">
+    <button type="button" class="mob-tab active" data-mob-tab="today" id="mob-tab-today">
+      <span>📅</span>
+      <span>今日/明日</span>
+    </button>
+    <button type="button" class="mob-tab" data-mob-tab="week" id="mob-tab-week">
+      <span>🗂️</span>
+      <span>整周课表</span>
+    </button>
+    <button type="button" class="mob-tab" data-mob-tab="ocr" id="mob-tab-ocr">
+      <span>📸</span>
+      <span>拍照加课</span>
+    </button>
+    <button type="button" class="mob-tab" data-mob-tab="ios" id="mob-tab-ios">
+      <span>📱</span>
+      <span>提醒/组件</span>
+    </button>
+  </nav>
+
+  <!-- ========================================================================
+       Modal 1: Lesson Editor + Single-Occurrence Override + Memo Note
+       ======================================================================== -->
+  <div class="modal-backdrop" id="modal-lesson" role="dialog" aria-modal="true" aria-labelledby="modal-lesson-title">
+    <div class="modal-panel">
+      <div class="modal-head">
+        <div>
+          <h2 id="modal-lesson-title">编辑课程与随堂备忘</h2>
+          <p id="modal-lesson-subtitle">周一 · 第一节 (08:05 - 08:50)</p>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" data-close-modal="modal-lesson">✕</button>
+      </div>
+
+      <div class="mode-tabs" role="tablist">
+        <button type="button" class="mode-tab active" id="tab-edit-regular">每周常规课 & 备忘</button>
+        <button type="button" class="mode-tab" id="tab-edit-override">仅本周调课 / 代课 / 停课</button>
+      </div>
+
+      <!-- Regular Weekly Lesson Form -->
+      <form id="form-lesson-regular">
+        <div class="form-grid">
+          <div class="form-field">
+            <label for="inp-les-day">星期</label>
+            <select class="select" id="inp-les-day"></select>
+          </div>
+          <div class="form-field">
+            <label for="inp-les-period">节次</label>
+            <select class="select" id="inp-les-period"></select>
+          </div>
+          <div class="form-field">
+            <label for="inp-les-class">授课班级（自动分配班级色标）*</label>
+            <input class="input" type="text" id="inp-les-class" placeholder="例如：高一(3)班" required />
+            <div class="quick-tags" id="quick-class-tags"></div>
+          </div>
+          <div class="form-field">
+            <label for="inp-les-subject">科目 / 课程内容</label>
+            <input class="input" type="text" id="inp-les-subject" placeholder="例如：数学 / 早读巡班" />
+          </div>
+          <div class="form-field">
+            <label for="inp-les-room">教室 / 地点</label>
+            <input class="input" type="text" id="inp-les-room" placeholder="例如：致远楼 303" />
+          </div>
+          <div class="form-field">
+            <label for="inp-les-weektype">单双周规则</label>
+            <select class="select" id="inp-les-weektype">
+              <option value="all">每周都上</option>
+              <option value="odd">仅单周上</option>
+              <option value="even">仅双周上</option>
+            </select>
+          </div>
+          <div class="form-field full">
+            <label for="inp-les-memo">📌 随堂一句话备忘贴（在今日卡片、iPhone提醒与桌面小组件同步展示）</label>
+            <input class="input" type="text" id="inp-les-memo" placeholder="如：收周末卷子 / 讲评第3章P42 / 带圆规三角板" />
+            <div class="quick-tags">
+              <button type="button" class="quick-tag" data-memo-fill="收作业本">收作业本</button>
+              <button type="button" class="quick-tag" data-memo-fill="讲评测试卷">讲评测试卷</button>
+              <button type="button" class="quick-tag" data-memo-fill="随堂小测">随堂小测</button>
+              <button type="button" class="quick-tag" data-memo-fill="带教学教具">带教学教具</button>
+              <button type="button" class="quick-tag" data-memo-fill="">清空备忘</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-foot">
+          <button type="button" class="btn btn-danger" id="btn-delete-lesson">删除本节常规课</button>
+          <div style="display:flex; gap:8px;">
+            <button type="button" class="btn" data-close-modal="modal-lesson">取消</button>
+            <button type="submit" class="btn btn-primary" id="btn-save-regular">保存课程</button>
+          </div>
+        </div>
+      </form>
+
+      <!-- Single-Date Override Form (调课 / 代课 / 停课) -->
+      <form id="form-lesson-override" style="display:none;">
+        <div class="form-grid">
+          <div class="form-field full">
+            <label for="inp-ov-type">仅对所选日期（<span id="ov-target-date-label"></span>）生效的临时变动类型</label>
+            <select class="select" id="inp-ov-type">
+              <option value="swap">🔄 临时调课（换班或换课，仅当天生效）</option>
+              <option value="substitute">🤝 替同事代课（仅当天新增/替换）</option>
+              <option value="cancel">⏸️ 本节停课 / 调走（当天免提醒，不删常规课表）</option>
+              <option value="memo_only">📌 仅当天专属随堂备忘</option>
+            </select>
+          </div>
+          <div class="form-field" id="ov-field-class">
+            <label for="inp-ov-class">当天授课班级</label>
+            <input class="input" type="text" id="inp-ov-class" placeholder="例如：高一(5)班" />
+          </div>
+          <div class="form-field" id="ov-field-subject">
+            <label for="inp-ov-subject">当天科目</label>
+            <input class="input" type="text" id="inp-ov-subject" placeholder="例如：数学" />
+          </div>
+          <div class="form-field" id="ov-field-room">
+            <label for="inp-ov-room">当天教室</label>
+            <input class="input" type="text" id="inp-ov-room" placeholder="例如：致远楼 305" />
+          </div>
+          <div class="form-field" id="ov-field-reason">
+            <label for="inp-ov-reason">变动备注（如：与王老师周四第2节互换）</label>
+            <input class="input" type="text" id="inp-ov-reason" placeholder="选填，方便日后核对课时" />
+          </div>
+          <div class="form-field full" id="ov-field-memo">
+            <label for="inp-ov-memo">📌 当天随堂备忘贴</label>
+            <input class="input" type="text" id="inp-ov-memo" placeholder="例如：布置代课自习任务" />
+          </div>
+        </div>
+
+        <div class="modal-foot">
+          <button type="button" class="btn btn-danger" id="btn-clear-override" style="display:none;">恢复原每周常规课</button>
+          <div style="display:flex; gap:8px; margin-left:auto;">
+            <button type="button" class="btn" data-close-modal="modal-lesson">取消</button>
+            <button type="submit" class="btn btn-primary">保存单次变动</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       Modal 2: Drag-and-Drop Swap Decision Prompt
+       ======================================================================== -->
+  <div class="modal-backdrop" id="modal-drag-swap" role="dialog" aria-modal="true">
+    <div class="modal-panel" style="max-width:440px;">
+      <div class="modal-head">
+        <div>
+          <h2>调整课程节次</h2>
+          <p id="drag-swap-desc">您刚将课程拖动到了新节次，请选择生效范围：</p>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" data-close-modal="modal-drag-swap">✕</button>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <button type="button" class="btn btn-primary" id="btn-swap-this-week" style="justify-content:flex-start; padding:12px 14px;">
+          🔄 仅本周临时调换（推荐 · 不改动其他周常规课表）
+        </button>
+        <button type="button" class="btn" id="btn-swap-permanent" style="justify-content:flex-start; padding:12px 14px;">
+          📌 永久修改每周固定课表
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       Modal 3: Photo OCR Import + Interactive Grid Proofreader
+       ======================================================================== -->
+  <div class="modal-backdrop" id="modal-ocr" role="dialog" aria-modal="true" aria-labelledby="modal-ocr-title">
+    <div class="modal-panel modal-wide">
+      <div class="modal-head">
+        <div>
+          <h2 id="modal-ocr-title">📸 拍照 / 智能导入课程表</h2>
+          <p>支持教务处纸质课表拍照、Excel/钉钉截图识别，导入前可在右侧网格可视化校对</p>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" data-close-modal="modal-ocr">✕</button>
+      </div>
+
+      <div class="mode-tabs">
+        <button type="button" class="mode-tab active" id="ocr-tab-photo">📷 拍照 / 传图 AI 识别</button>
+        <button type="button" class="mode-tab" id="ocr-tab-text">📋 粘贴 Excel / 文本 / 免Key提示词</button>
+      </div>
+
+      <!-- Photo Upload Panel -->
+      <div id="ocr-panel-photo">
+        <input type="file" id="inp-ocr-file" accept="image/*" style="display:none;" />
+        <div class="ocr-dropzone" id="ocr-dropzone">
+          <div style="font-size:28px; margin-bottom:6px;">📸</div>
+          <div style="font-weight:700; font-size:15px; margin-bottom:4px;">点击拍照 / 从手机相册选择课表照片，或将截图拖入此处</div>
+          <div style="font-size:12px; color:var(--ink-muted); margin-bottom:12px;">支持纸质任课表、Excel排课截图、微信群课表图</div>
+          <div style="display:flex; justify-content:center; gap:10px; flex-wrap:wrap;">
+            <button type="button" class="btn btn-primary" id="btn-pick-photo">选择照片 / 拍照</button>
+            <button type="button" class="btn btn-amber" id="btn-try-demo-photo">✨ 试用示例纸质课表照片（秒出体验）</button>
+          </div>
+        </div>
+
+        <details style="margin-top:10px; background:var(--bg-subtle); padding:10px 14px; border-radius:var(--radius-sm);">
+          <summary style="cursor:pointer; font-size:12.5px; font-weight:700; color:var(--ink-secondary);">
+            ⚙️ 视觉大模型接口设置（支持服务端预设或填入通义千问 Qwen-VL / OpenAI 兼容 Key）
+          </summary>
+          <div class="form-grid" style="margin-top:10px;">
+            <div class="form-field">
+              <label for="inp-vision-base">API 接口地址 (OpenAI 兼容)</label>
+              <input class="input" type="text" id="inp-vision-base" placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1" />
+            </div>
+            <div class="form-field">
+              <label for="inp-vision-model">视觉模型名称</label>
+              <input class="input" type="text" id="inp-vision-model" placeholder="qwen-vl-max-latest" />
+            </div>
+            <div class="form-field full">
+              <label for="inp-vision-key">API Key（仅保存在您本地浏览器，服务端已配环境变量时可留空）</label>
+              <input class="input" type="password" id="inp-vision-key" placeholder="sk-..." />
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <!-- Text / Excel / Prompt Fallback Panel -->
+      <div id="ocr-panel-text" style="display:none;">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+          <span style="font-size:12.5px; color:var(--ink-secondary);">
+            没配 API Key？点右侧复制专属提示词，连同照片发给<strong>豆包 / Kimi / 通义 / 元宝</strong>，把返回的 JSON 粘在下方即可；也支持直接从 Excel 复制表格粘贴！
+          </span>
+          <button type="button" class="btn btn-amber btn-sm" id="btn-copy-ai-prompt">📋 一键复制 AI 识图提示词</button>
+        </div>
+        <textarea class="textarea" id="inp-ocr-rawtext" rows="6" placeholder="支持粘贴：&#10;1. 任意 AI 返回的 JSON 代码块&#10;2. Excel / WPS 直接框选复制的课表单元格&#10;3. 文本行，例如：周一 第1-2节 高一(3)班 数学 致远楼303"></textarea>
+        <div style="margin-top:8px; text-align:right;">
+          <button type="button" class="btn btn-primary" id="btn-parse-rawtext">解析文本并进入网格校对 ›</button>
+        </div>
+      </div>
+
+      <!-- Split-Screen Visual Proofreader (shown after photo/text recognition) -->
+      <div id="ocr-proof-section" style="display:none;">
+        <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--border-hairline); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+          <div>
+            <strong id="ocr-proof-summary" style="font-size:14.5px; color:var(--brand-ink);">✅ 已识别出 19 节课程</strong>
+            <span style="font-size:12px; color:var(--ink-muted); margin-left:8px;">点击右侧任意格子可微调班级/科目，核对无误后点击底部确认导入</span>
+          </div>
+          <label style="font-size:12.5px; display:flex; align-items:center; gap:6px;">
+            导入方式：
+            <select class="select" id="sel-import-mode" style="width:auto; padding:4px 8px; font-size:12px;">
+              <option value="replace">覆盖现有周课表（推荐新学期）</option>
+              <option value="merge">合并追加（保留不冲突的原课程）</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="ocr-split">
+          <div class="ocr-photo-box" id="ocr-photo-preview-wrap">
+            <img id="ocr-photo-img" src="/sample-timetable.png" alt="课表原图对照" />
+          </div>
+          <div style="overflow-x:auto;">
+            <table class="proof-grid-table" id="ocr-proof-table"></table>
+          </div>
+        </div>
+
+        <div class="modal-foot">
+          <button type="button" class="btn btn-ghost" id="btn-reset-ocr">重新上传</button>
+          <div style="display:flex; gap:8px;">
+            <button type="button" class="btn" data-close-modal="modal-ocr">取消</button>
+            <button type="button" class="btn btn-primary" id="btn-confirm-ocr-import">✅ 确认导入到我的课程表</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       Modal 4: iPhone Reminders, Scriptable Home Screen Widget & 6-Digit Sync
+       ======================================================================== -->
+  <div class="modal-backdrop" id="modal-ios" role="dialog" aria-modal="true" aria-labelledby="modal-ios-title">
+    <div class="modal-panel modal-wide">
+      <div class="modal-head">
+        <div>
+          <h2 id="modal-ios-title">📱 iPhone 课程提醒 · 今日/明日桌面小组件 · 多端同步</h2>
+          <p>无需开发或安装专属 App，一套 Web/PWA 同时打通苹果系统日历闹钟与桌面小组件</p>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" data-close-modal="modal-ios">✕</button>
+      </div>
+
+      <!-- Step 1: 6-digit Sync Code -->
+      <div class="sync-code-box" style="margin-bottom:16px; flex-wrap:wrap;">
+        <div>
+          <div style="font-size:12px; font-weight:700; color:var(--ink-secondary);">第一步：6 位多端同步码（免注册 · 电脑排课手机秒同步，同时用于小组件与日历动态订阅）</div>
+          <div style="display:flex; align-items:center; gap:12px; margin-top:4px;">
+            <span class="sync-digits" id="ios-sync-code-display">未开启</span>
+            <span id="ios-sync-status-hint" style="font-size:12px; color:var(--ink-muted);">生成后修改课表将自动云端同步</span>
+          </div>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <button type="button" class="btn btn-primary btn-sm" id="btn-create-sync-code">✨ 一键生成同步码</button>
+          <input class="input" type="text" id="inp-join-sync-code" placeholder="输入已有6位码" maxlength="12" style="width:128px; padding:5px 9px; font-size:12.5px;" />
+          <button type="button" class="btn btn-sm" id="btn-pull-sync-code">拉取同步</button>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap:16px;">
+        <!-- Left Card: Apple System Calendar Reminder + PWA Push -->
+        <div class="card" style="background:var(--bg-canvas);">
+          <h3 style="margin:0 0 6px; font-size:15.5px;">🔔 1. 苹果手机准时上课提醒（零安装首选）</h3>
+          <p style="margin:0 0 12px; font-size:12.5px; color:var(--ink-secondary);">
+            点击下方「一键订阅到苹果日历」，iPhone 自带日历将在课前弹窗响铃（锁屏与 Apple Watch 均生效），您在网页端<strong>临时调课或写随堂备忘</strong>会自动同步！
+          </p>
+
+          <div class="form-field" style="margin-bottom:12px;">
+            <label for="sel-reminder-min">课前提醒提前量</label>
+            <select class="select" id="sel-reminder-min">
+              <option value="5">课前 5 分钟提醒</option>
+              <option value="10">课前 10 分钟提醒</option>
+              <option value="15" selected>课前 15 分钟提醒（推荐）</option>
+              <option value="20">课前 20 分钟提醒</option>
+              <option value="30">课前 30 分钟提醒</option>
+            </select>
+          </div>
+
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <a class="btn btn-primary" id="link-webcal-subscribe" href="#" style="text-decoration:none;">
+              📅 一键订阅到 iPhone 苹果日历 (webcal://)
+            </a>
+            <div style="display:flex; gap:8px;">
+              <button type="button" class="btn btn-sm" id="btn-copy-ics-url" style="flex:1;">复制日历订阅链接</button>
+              <button type="button" class="btn btn-sm" id="btn-download-ics" style="flex:1;">下载离线 .ics 文件</button>
+            </div>
+          </div>
+
+          <hr style="border:none; border-top:1px solid var(--border-hairline); margin:14px 0;" />
+
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+            <div>
+              <div style="font-weight:700; font-size:13px;">PWA 主屏幕网页通知（双重兜底）</div>
+              <div style="font-size:11.5px; color:var(--ink-muted);">Safari「分享 → 添加到主屏幕」后可开启课前通知</div>
+            </div>
+            <div style="display:flex; gap:6px;">
+              <button type="button" class="btn btn-sm" id="btn-enable-pwa-notify">开启通知</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="btn-test-pwa-notify">测试提醒</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Card: iOS Home Screen Widget (Today -> Tomorrow Auto Switch) -->
+        <div class="card" style="background:var(--bg-canvas);">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px;">
+            <h3 style="margin:0; font-size:15.5px;">🧩 2. iPhone 桌面小组件（没课自动看明天）</h3>
+          </div>
+          <p style="margin:0 0 10px; font-size:12.5px; color:var(--ink-secondary);">
+            实时模拟您的课表在 iPhone 桌面上的真实效果——<strong>白天展示今日剩余课，最后一节下课（或当天无课）立即自动切换为明日预告</strong>：
+          </p>
+
+          <!-- Live iOS Widget Simulator -->
+          <div class="ios-sim-shell">
+            <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:center;">
+              <button type="button" class="btn btn-sm" id="wsim-mode-today">☀️ 预览：白天有课态</button>
+              <button type="button" class="btn btn-sm" id="wsim-mode-tomorrow">🌙 预览：结课后看明天</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="wsim-toggle-dark">切换深浅外观</button>
+            </div>
+
+            <div class="ios-widget-card" id="ios-widget-preview-box"></div>
+          </div>
+
+          <div style="margin-top:12px; display:flex; gap:8px;">
+            <button type="button" class="btn btn-primary" id="btn-copy-scriptable" style="flex:2;">
+              📋 一键复制我的专属小组件代码
+            </button>
+            <button type="button" class="btn btn-sm" id="btn-download-scriptable" style="flex:1;">
+              下载 .js 脚本
+            </button>
+          </div>
+          <div style="margin-top:8px; font-size:11.5px; color:var(--ink-muted); line-height:1.5;">
+            💡 <strong>30秒配置步骤</strong>：① App Store 免费安装 <strong>Scriptable</strong> → ② 点右上角 <code>+</code> 粘贴上方代码 → ③ 长按 iPhone 桌面添加 Scriptable 中号小组件并选择该脚本即可！
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       Modal 5: Period Bell Times & Teacher Settings
+       ======================================================================== -->
+  <div class="modal-backdrop" id="modal-settings" role="dialog" aria-modal="true" aria-labelledby="modal-settings-title">
+    <div class="modal-panel modal-wide">
+      <div class="modal-head">
+        <div>
+          <h2 id="modal-settings-title">⏰ 学校作息时间与个人设置</h2>
+          <p>内置中小学标准节次模板，支持一键批量顺延每节课时长与数据备份</p>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" data-close-modal="modal-settings">✕</button>
+      </div>
+
+      <div class="form-grid" style="margin-bottom:16px;">
+        <div class="form-field">
+          <label for="inp-set-teacher">教师称呼</label>
+          <input class="input" type="text" id="inp-set-teacher" placeholder="如：林老师" />
+        </div>
+        <div class="form-field">
+          <label for="inp-set-subject">主要任教学科（新增课程时自动填入）</label>
+          <input class="input" type="text" id="inp-set-subject" placeholder="如：数学" />
+        </div>
+        <div class="form-field">
+          <label for="inp-set-semstart">本学期第一周周一日期（用于计算第几周与单双周）</label>
+          <input class="input" type="date" id="inp-set-semstart" />
+        </div>
+        <div class="form-field">
+          <label>一键套用标准作息模板</label>
+          <div style="display:flex; gap:8px;">
+            <button type="button" class="btn btn-sm" id="btn-preset-45">初高中 45 分钟制</button>
+            <button type="button" class="btn btn-sm" id="btn-preset-40">小学 40 分钟制</button>
+          </div>
+        </div>
+      </div>
+
+      <div style="max-height:300px; overflow-y:auto; border:1px solid var(--border-hairline); border-radius:var(--radius-md); padding:10px;">
+        <table class="proof-grid-table" id="settings-periods-table"></table>
+      </div>
+
+      <div class="modal-foot" style="flex-wrap:wrap;">
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button type="button" class="btn btn-sm" id="btn-export-json">导出 JSON 备份</button>
+          <label class="btn btn-sm" style="margin:0;">
+            导入 JSON 备份
+            <input type="file" id="inp-import-json" accept=".json,application/json" style="display:none;" />
+          </label>
+          <button type="button" class="btn btn-danger btn-sm" id="btn-clear-all-lessons">清空整表重排</button>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button type="button" class="btn" data-close-modal="modal-settings">取消</button>
+          <button type="button" class="btn btn-primary" id="btn-save-settings">保存作息与设置</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div class="toast-stack" id="toast-stack" aria-live="polite"></div>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>
