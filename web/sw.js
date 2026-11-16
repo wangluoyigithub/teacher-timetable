@@ -1,15 +1,16 @@
-const CACHE_VERSION = "teacher-timetable-v1.0.0";
+const CACHE_VERSION = "teacher-timetable-v1.1.0";
 const CORE_ASSETS = [
-  "/",
-  "/index.html",
-  "/styles/index.css",
-  "/js/data.js",
-  "/js/app.js",
-  "/manifest.webmanifest",
-  "/icons/icon.svg",
-  "/icons/icon-192.png",
-  "/icons/apple-touch-icon.png",
-  "/sample-timetable.png"
+  "./",
+  "./index.html",
+  "./styles/index.css",
+  "./js/data.js",
+  "./js/standalone.js",
+  "./js/app.js",
+  "./manifest.webmanifest",
+  "./icons/icon.svg",
+  "./icons/icon-192.png",
+  "./icons/apple-touch-icon.png",
+  "./sample-timetable.png"
 ];
 
 self.addEventListener("install", (event) => {
@@ -31,10 +32,8 @@ self.addEventListener("fetch", (event) => {
   if (req.method !== "GET") return;
   const url = new URL(req.url);
 
-  // Network-only for API endpoints
-  if (url.pathname.startsWith("/api/")) return;
+  if (url.pathname.includes("/api/")) return;
 
-  // Stale-while-revalidate for static assets
   event.respondWith(
     caches.match(req).then((cached) => {
       const fetchPromise = fetch(req)
@@ -57,11 +56,11 @@ self.addEventListener("message", (event) => {
     const title = data.title || "上课提醒";
     const options = {
       body: data.body || "",
-      icon: "/icons/icon-192.png",
-      badge: "/icons/icon-192.png",
+      icon: "./icons/icon-192.png",
+      badge: "./icons/icon-192.png",
       tag: data.tag || "class-reminder",
       renotify: true,
-      data: { url: "/" }
+      data: { url: "./" }
     };
     self.registration.showNotification(title, options);
   }
@@ -74,7 +73,7 @@ self.addEventListener("notificationclick", (event) => {
       for (const client of clientList) {
         if ("focus" in client) return client.focus();
       }
-      if (self.clients.openWindow) return self.clients.openWindow("/");
+      if (self.clients.openWindow) return self.clients.openWindow("./");
     })
   );
 });

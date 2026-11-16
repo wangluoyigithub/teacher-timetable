@@ -11,18 +11,18 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="知时课表" />
-  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
-  <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" />
-  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+  <link rel="icon" type="image/svg+xml" href="./icons/icon.svg" />
+  <link rel="manifest" href="./manifest.webmanifest" />
 
-  <link rel="stylesheet" href="/styles/index.css" />
+  <link rel="stylesheet" href="./styles/index.css" />
 </head>
 <body data-mobile-tab="today">
   <!-- Top Navigation Header -->
   <header class="topbar">
     <div class="topbar-inner">
       <div class="brand-group">
-        <img src="/icons/icon.svg" alt="知时课表图标" class="brand-logo" />
+        <img src="./icons/icon.svg" alt="知时课表图标" class="brand-logo" />
         <div class="brand-titles">
           <h1>
             <span>知时课表</span>
@@ -356,7 +356,7 @@
 
         <div class="ocr-split">
           <div class="ocr-photo-box" id="ocr-photo-preview-wrap">
-            <img id="ocr-photo-img" src="/sample-timetable.png" alt="课表原图对照" />
+            <img id="ocr-photo-img" src="./sample-timetable.png" alt="课表原图对照" />
           </div>
           <div style="overflow-x:auto;">
             <table class="proof-grid-table" id="ocr-proof-table"></table>
@@ -387,19 +387,22 @@
         <button type="button" class="btn btn-ghost btn-sm" data-close-modal="modal-ios">✕</button>
       </div>
 
-      <!-- Step 1: 6-digit Sync Code -->
+      <!-- Step 1: Cross-Device Sync (Serverless Link + Optional 6-Digit Server Sync) -->
       <div class="sync-code-box" style="margin-bottom:16px; flex-wrap:wrap;">
         <div>
-          <div style="font-size:12px; font-weight:700; color:var(--ink-secondary);">第一步：6 位多端同步码（免注册 · 电脑排课手机秒同步，同时用于小组件与日历动态订阅）</div>
-          <div style="display:flex; align-items:center; gap:12px; margin-top:4px;">
-            <span class="sync-digits" id="ios-sync-code-display">未开启</span>
-            <span id="ios-sync-status-hint" style="font-size:12px; color:var(--ink-muted);">生成后修改课表将自动云端同步</span>
+          <div style="font-size:12px; font-weight:700; color:var(--ink-secondary);">多端传课表（电脑排好课 → 发到微信在 iPhone Safari 点开即自动同步整张课表）</div>
+          <div style="display:flex; align-items:center; gap:12px; margin-top:4px; flex-wrap:wrap;">
+            <span class="sync-digits" id="ios-sync-code-display">本地就绪</span>
+            <span id="ios-sync-status-hint" style="font-size:12px; color:var(--ink-muted);">支持免服务器加密链接秒传，或后端 6 位码实时同步</span>
           </div>
         </div>
         <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-          <button type="button" class="btn btn-primary btn-sm" id="btn-create-sync-code">✨ 一键生成同步码</button>
-          <input class="input" type="text" id="inp-join-sync-code" placeholder="输入已有6位码" maxlength="12" style="width:128px; padding:5px 9px; font-size:12.5px;" />
-          <button type="button" class="btn btn-sm" id="btn-pull-sync-code">拉取同步</button>
+          <button type="button" class="btn btn-amber btn-sm" id="btn-copy-share-link">🔗 复制跨端秒传链接（推荐）</button>
+          <span id="server-sync-controls" style="display:inline-flex; gap:6px; align-items:center; flex-wrap:wrap;">
+            <button type="button" class="btn btn-primary btn-sm" id="btn-create-sync-code">✨ 6位云同步码</button>
+            <input class="input" type="text" id="inp-join-sync-code" placeholder="输入6位码" maxlength="12" style="width:104px; padding:5px 9px; font-size:12.5px;" />
+            <button type="button" class="btn btn-sm" id="btn-pull-sync-code">拉取</button>
+          </span>
         </div>
       </div>
 
@@ -541,6 +544,6 @@
   <!-- Toast Container -->
   <div class="toast-stack" id="toast-stack" aria-live="polite"></div>
 
-  <script type="module" src="/js/app.js"></script>
+  <script type="module" src="./js/app.js"></script>
 </body>
 </html>

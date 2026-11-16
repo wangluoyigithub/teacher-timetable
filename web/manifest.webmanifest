@@ -2,8 +2,8 @@
   "name": "知时课表 · 教师极简智能课程表",
   "short_name": "知时课表",
   "description": "专为教师打造的极简课程表 PWA：一眼看清整周课表、今日上完自动看明天、拍照 AI 识别导入、支持 iPhone 日历提醒与桌面小组件。",
-  "start_url": "/?source=pwa",
-  "scope": "/",
+  "start_url": "./?source=pwa",
+  "scope": "./",
   "display": "standalone",
   "orientation": "any",
   "background_color": "#FAF8F4",
@@ -11,19 +11,19 @@
   "lang": "zh-CN",
   "icons": [
     {
-      "src": "/icons/icon-192.png",
+      "src": "./icons/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/icons/icon-512.png",
+      "src": "./icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/icons/icon.svg",
+      "src": "./icons/icon.svg",
       "sizes": "any",
       "type": "image/svg+xml"
     }
@@ -32,14 +32,14 @@
     {
       "name": "今日与明日课程",
       "short_name": "今日课表",
-      "url": "/?tab=today",
-      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+      "url": "./?tab=today",
+      "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192" }]
     },
     {
       "name": "拍照添加课表",
       "short_name": "拍照导入",
-      "url": "/?action=ocr",
-      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+      "url": "./?action=ocr",
+      "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192" }]
     }
   ]
 }

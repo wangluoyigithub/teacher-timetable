@@ -1,5 +1,6 @@
 /* ==========================================================================
    知时课表 · Teacher Timetable PWA — Main Application Controller
+   Supports both Full-Stack Server Mode and Pure-Static GitHub Pages Mode!
    ========================================================================== */
 
 import {
@@ -20,23 +21,35 @@ import {
   resolveDayLessons
 } from "./data.js";
 
+import {
+  DEMO_SAMPLE_RESULT,
+  clientBuildAiPrompt,
+  clientBuildIcs,
+  clientBuildScriptableJs,
+  clientParseImageDirect,
+  clientParseText,
+  decodeScheduleFromHash,
+  encodeScheduleShareUrl
+} from "./standalone.js";
+
 const STORAGE_KEY = "teacher_timetable_v1";
 const SYNC_KEY = "teacher_timetable_sync_code";
 const VISION_CFG_KEY = "teacher_timetable_vision_cfg";
 const THEME_KEY = "teacher_timetable_theme";
 
 const state = {
+  hasBackend: false,
   schedule: loadLocalSchedule(),
   syncCode: (localStorage.getItem(SYNC_KEY) || "").toUpperCase(),
   weekOffset: 0,
   simMode: "live", // "live" | "morning" | "afterschool"
-  selectedMobileDateISO: null, // null = smart Today->Tomorrow mode
+  selectedMobileDateISO: null,
   spotlightClass: null,
-  editingSlot: null, // { day, periodId, dateISO }
-  pendingDrag: null, // { fromDay, fromPeriodId, fromDateISO, toDay, toPeriodId, toDateISO }
+  editingSlot: null,
+  pendingDrag: null,
   ocrDraftLessons: [],
   ocrDraftMeta: {},
-  wsimMode: "tomorrow_check", // "today" | "tomorrow"
+  wsimMode: "tomorrow_check",
   wsimDark: false,
   notifiedKeys: new Set()
 };
@@ -62,7 +75,7 @@ function saveSchedule({ skipCloud = false } = {}) {
   ensureClassColors(state.schedule);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.schedule));
   renderAll();
-  if (!skipCloud && state.syncCode) {
+  if (!skipCloud && state.hasBackend && state.syncCode) {
     pushToCloud(state.syncCode, true);
   }
 }
@@ -82,12 +95,11 @@ function showToast(msg) {
   el.className = "toast";
   el.textContent = msg;
   stack.appendChild(el);
-  setTimeout(() => el.remove(), 2900);
+  setTimeout(() => el.remove(), 3100);
 }
 
 function getEffectiveNow() {
   const real = new Date();
-  // If today in real life is Saturday/Sunday and user clicks simulation modes, anchor to Monday so demo is vivid
   if (state.simMode === "morning") {
     const base = (real.getDay() === 0 || real.getDay() === 6) ? getMondayOfWeek(real) : real;
     return { date: base, simMinutes: 8 * 60 + 20 };
@@ -116,10 +128,10 @@ function renderHeader() {
     `${tName}${subj} · 第 ${weekNo} 周 · 本周共 ${totalWeekly} 节常规课`;
 
   const pillText = document.getElementById("sync-pill-text");
-  if (state.syncCode) {
+  if (state.hasBackend && state.syncCode) {
     pillText.textContent = `同步码 ${state.syncCode}`;
   } else {
-    pillText.textContent = "本地离线 · 点此同步";
+    pillText.textContent = "传到手机 / 备份";
   }
 
   document.getElementById("toggle-morning-read").classList.toggle("on", state.schedule.showMorningRead !== false);
@@ -166,7 +178,6 @@ function renderFocusCard() {
   const container = document.getElementById("focus-card-container");
   const { date: baseToday, simMinutes } = getEffectiveNow();
 
-  // If user manually selected another date on the mobile day strip
   if (state.selectedMobileDateISO) {
     const [y, m, d] = state.selectedMobileDateISO.split("-").map(Number);
     const customDate = new Date(y, m - 1, d);
@@ -243,7 +254,6 @@ function renderFocusCard() {
       </details>
     `;
   } else {
-    // Automatically switched to TOMORROW!
     container.innerHTML = `
       <div class="focus-header">
         <div class="focus-title-group">
@@ -253,7 +263,7 @@ function renderFocusCard() {
         <span class="status-tag tomorrow">${esc(focus.reasonLabel)}</span>
       </div>
 
-      <div style="font-size:12px; color:var(--ink-secondary); margin-bottom:10px; padding:8px 10px; border-radius:var(--radius-sm); background:var(--amber-soft); color:var(--amber-ink);">
+      <div style="font-size:12px; margin-bottom:10px; padding:8px 10px; border-radius:var(--radius-sm); background:var(--amber-soft); color:var(--amber-ink);">
         ✨ 今日课程已全部完成（共 ${focus.todayLessons.length} 节），已为您自动切换展示明天（${WEEKDAY_LABELS[tmrIsoDay]}）的课表：
       </div>
 
@@ -411,12 +421,10 @@ function renderWeeklyGrid() {
     </tr>
   `;
 
-  // Pre-resolve every displayed day's lessons (including canceled overrides so teacher sees dashed slot)
   const daySlotMaps = new Map();
   for (const wd of weekDates) {
     const resolved = resolveDayLessons(state.schedule, wd.dateObj, { includeCanceled: true });
-    const byPid = new Map(resolved.map((item) => [item.periodId, item]));
-    daySlotMaps.set(wd.day, byPid);
+    daySlotMaps.set(wd.day, new Map(resolved.map((item) => [item.periodId, item])));
   }
 
   const visiblePeriods = getVisiblePeriods(state.schedule);
@@ -483,7 +491,6 @@ function renderWeeklyGrid() {
 
   tbody.innerHTML = rowsHTML;
 
-  // Bind click events for empty slots & existing cards
   tbody.querySelectorAll("[data-add-slot], [data-edit-slot]").forEach((el) => {
     el.addEventListener("click", () => {
       const raw = el.getAttribute("data-add-slot") || el.getAttribute("data-edit-slot");
@@ -492,7 +499,6 @@ function renderWeeklyGrid() {
     });
   });
 
-  // Bind HTML5 Drag & Drop for instant lesson swapping
   tbody.querySelectorAll("[data-drag-source]").forEach((card) => {
     card.addEventListener("dragstart", (e) => {
       e.dataTransfer.setData("text/plain", card.getAttribute("data-drag-source"));
@@ -563,7 +569,6 @@ function openLessonModal(day = 1, periodId = "p1", dateISO = null) {
   }
   state.editingSlot = { day, periodId, dateISO };
 
-  // Populate day & period selects
   const daySel = document.getElementById("inp-les-day");
   daySel.innerHTML = [1, 2, 3, 4, 5, 6, 7]
     .map((d) => `<option value="${d}" ${d === day ? "selected" : ""}>${WEEKDAY_LABELS[d]}</option>`)
@@ -578,7 +583,6 @@ function openLessonModal(day = 1, periodId = "p1", dateISO = null) {
   document.getElementById("modal-lesson-subtitle").textContent =
     `${dateISO} (${WEEKDAY_LABELS[day]}) · ${periodObj.label} ${periodObj.start}-${periodObj.end}`;
 
-  // Existing regular lesson
   const regLesson = (state.schedule.lessons || []).find((l) => Number(l.day) === day && l.periodId === periodId);
   document.getElementById("inp-les-class").value = regLesson?.className || "";
   document.getElementById("inp-les-subject").value = regLesson?.subject || state.schedule.defaultSubject || "";
@@ -587,7 +591,6 @@ function openLessonModal(day = 1, periodId = "p1", dateISO = null) {
   document.getElementById("inp-les-memo").value = regLesson?.memo || "";
   document.getElementById("btn-delete-lesson").style.display = regLesson ? "inline-flex" : "none";
 
-  // Quick class suggestion tags
   const existingClasses = [...new Set((state.schedule.lessons || []).map((l) => l.className).filter(Boolean))];
   const qWrap = document.getElementById("quick-class-tags");
   qWrap.innerHTML = existingClasses
@@ -599,7 +602,6 @@ function openLessonModal(day = 1, periodId = "p1", dateISO = null) {
     });
   });
 
-  // Override tab fields
   const ovKey = `${dateISO}__${periodId}`;
   const ov = (state.schedule.overrides || {})[ovKey];
   document.getElementById("ov-target-date-label").textContent = `${dateISO} ${WEEKDAY_LABELS[day]}`;
@@ -706,7 +708,7 @@ function executeDragSwap(thisWeekOnly) {
 }
 
 /* ==========================================================================
-   Photo OCR Recognition & Visual Grid Proofreader
+   Photo OCR Recognition & Visual Grid Proofreader (Server + Static Fallback)
    ========================================================================== */
 
 async function compressImageFile(file, maxWidth = 1560) {
@@ -723,8 +725,7 @@ async function compressImageFile(file, maxWidth = 1560) {
         canvas.height = h;
         const ctx = canvas.getContext("2d");
         ctx.drawImage(img, 0, 0, w, h);
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.86);
-        resolve(dataUrl);
+        resolve(canvas.toDataURL("image/jpeg", 0.86));
       };
       img.onerror = reject;
       img.src = reader.result;
@@ -735,9 +736,21 @@ async function compressImageFile(file, maxWidth = 1560) {
 }
 
 async function runImageOcr({ dataUrl, isDemoSample = false }) {
-  document.getElementById("ocr-photo-img").src = dataUrl || "/sample-timetable.png";
+  document.getElementById("ocr-photo-img").src = dataUrl || "./sample-timetable.png";
   document.getElementById("ocr-photo-preview-wrap").style.display = "block";
   showToast(isDemoSample ? "正在识别示例课表照片..." : "正在调用 AI 视觉模型解析课表...");
+
+  if (isDemoSample) {
+    state.ocrDraftLessons = structuredClone(DEMO_SAMPLE_RESULT.lessons);
+    state.ocrDraftMeta = {
+      teacherName: DEMO_SAMPLE_RESULT.teacherName,
+      defaultSubject: DEMO_SAMPLE_RESULT.defaultSubject
+    };
+    renderOcrProofGrid();
+    document.getElementById("ocr-proof-section").style.display = "block";
+    showToast(`识别成功！共提取 ${state.ocrDraftLessons.length} 节课程，请核对右侧网格`);
+    return;
+  }
 
   const savedCfg = JSON.parse(localStorage.getItem(VISION_CFG_KEY) || "{}");
   const apiBase = document.getElementById("inp-vision-base").value.trim() || savedCfg.apiBase || "";
@@ -749,25 +762,37 @@ async function runImageOcr({ dataUrl, isDemoSample = false }) {
   }
 
   try {
-    const resp = await fetch("/api/ocr/parse", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        imageBase64: dataUrl || "",
-        mimeType: "image/jpeg",
+    let res;
+    if (state.hasBackend) {
+      const resp = await fetch("./api/ocr/parse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          imageBase64: dataUrl || "",
+          mimeType: "image/jpeg",
+          periods: state.schedule.periods,
+          defaultSubject: state.schedule.defaultSubject,
+          apiBase,
+          apiKey,
+          model: apiModel,
+          isDemoSample: false
+        })
+      });
+      res = await resp.json();
+    } else {
+      res = await clientParseImageDirect({
+        dataUrl,
         periods: state.schedule.periods,
         defaultSubject: state.schedule.defaultSubject,
         apiBase,
         apiKey,
-        model: apiModel,
-        isDemoSample
-      })
-    });
-    const res = await resp.json();
+        model: apiModel
+      });
+    }
+
     if (!res.ok) {
-      showToast(res.message || "未能自动识别，请配置 API Key 或使用提示词粘贴模式");
+      showToast(res.message || "未能自动识别，请填入 API Key 或切换至提示词模式");
       if (res.code === "NO_API_KEY") {
-        // Switch user gently to see API key details or prompt tab
         document.querySelector("#ocr-panel-photo details").open = true;
       }
       return;
@@ -781,7 +806,7 @@ async function runImageOcr({ dataUrl, isDemoSample = false }) {
     document.getElementById("ocr-proof-section").style.display = "block";
     showToast(`识别成功！共提取 ${state.ocrDraftLessons.length} 节课程，请核对右侧网格`);
   } catch (err) {
-    showToast("网络或服务异常，可使用「粘贴Excel/文本」离线解析");
+    showToast("接口跨域或网络受限，可点上方「粘贴Excel/免Key提示词」配合豆包秒转！");
   }
 }
 
@@ -855,12 +880,17 @@ function renderOcrProofGrid() {
 }
 
 /* ==========================================================================
-   6-Digit Cloud Sync + Apple Calendar (.ics) + iOS Scriptable Widget Center
+   Cross-Device Sync + Apple Calendar (.ics) + iOS Scriptable Widget Center
    ========================================================================== */
 
+function getAppBaseUrl() {
+  return window.location.href.split("?")[0].split("#")[0].replace(/\/index\.html$/, "").replace(/\/+$/, "");
+}
+
 async function ensureSyncCodeCreated() {
+  if (!state.hasBackend) return "LOCAL";
   if (state.syncCode) return state.syncCode;
-  const resp = await fetch("/api/sync/create", {
+  const resp = await fetch("./api/sync/create", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ schedule: state.schedule })
@@ -877,29 +907,29 @@ async function ensureSyncCodeCreated() {
 }
 
 async function pushToCloud(code, silent = false) {
+  if (!state.hasBackend) return;
   try {
-    const resp = await fetch(`/api/sync/${encodeURIComponent(code)}`, {
+    const resp = await fetch(`./api/sync/${encodeURIComponent(code)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ schedule: state.schedule })
     });
     const data = await resp.json();
-    if (data.ok && !silent) {
-      showToast(`已同步至云端（同步码：${code}）`);
-    }
+    if (data.ok && !silent) showToast(`已同步至云端（同步码：${code}）`);
   } catch (e) {
     if (!silent) showToast("当前处于离线状态，更改已安全保存在本地");
   }
 }
 
 async function pullFromCloud(code) {
+  if (!state.hasBackend) return;
   const clean = String(code || "").trim().toUpperCase();
   if (!clean || clean.length < 4) {
     showToast("请输入有效的 6 位同步码");
     return;
   }
   try {
-    const resp = await fetch(`/api/sync/${encodeURIComponent(clean)}`);
+    const resp = await fetch(`./api/sync/${encodeURIComponent(clean)}`);
     const data = await resp.json();
     if (!data.ok || !data.schedule) {
       showToast(data.message || "未找到该同步码对应的课表");
@@ -919,26 +949,57 @@ async function pullFromCloud(code) {
 function getIcsHttpUrl() {
   const code = state.syncCode || "LOCAL";
   const alarm = state.schedule.reminderMinutes || 15;
-  return `${window.location.origin}/api/ics/${code}.ics?alarm=${alarm}`;
+  return `${getAppBaseUrl()}/api/ics/${code}.ics?alarm=${alarm}`;
+}
+
+function downloadOrOpenClientIcs() {
+  const icsText = clientBuildIcs(state.schedule, state.schedule.reminderMinutes || 15);
+  const blob = new Blob([icsText], { type: "text/calendar;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `教师课程表-${state.schedule.teacherName || "提醒"}.ics`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 3000);
+  showToast("📅 已生成苹果日历提醒文件，iPhone Safari 弹窗点击「添加全部」即可准时提醒！");
 }
 
 function updateIosModalLinks() {
   const codeEl = document.getElementById("ios-sync-code-display");
   const hintEl = document.getElementById("ios-sync-status-hint");
+  const serverControls = document.getElementById("server-sync-controls");
   const selRem = document.getElementById("sel-reminder-min");
+  const webcalBtn = document.getElementById("link-webcal-subscribe");
+  const copyIcsBtn = document.getElementById("btn-copy-ics-url");
+
   selRem.value = String(state.schedule.reminderMinutes || 15);
 
-  if (state.syncCode) {
-    codeEl.textContent = state.syncCode;
-    hintEl.textContent = "已开启云同步 · 修改课表或备忘将自动更新 iPhone 日历与小组件";
-    const httpUrl = getIcsHttpUrl();
-    const webcalUrl = httpUrl.replace(/^https?:\/\//i, "webcal://");
-    document.getElementById("link-webcal-subscribe").setAttribute("href", webcalUrl);
+  if (state.hasBackend) {
+    serverControls.style.display = "inline-flex";
+    copyIcsBtn.style.display = "inline-flex";
+    if (state.syncCode) {
+      codeEl.textContent = state.syncCode;
+      hintEl.textContent = "已开启云同步 · 修改课表或备忘将自动更新 iPhone 日历与小组件";
+      webcalBtn.textContent = "📅 一键订阅到 iPhone 苹果日历 (webcal://)";
+      webcalBtn.setAttribute("href", getIcsHttpUrl().replace(/^https?:\/\//i, "webcal://"));
+    } else {
+      codeEl.textContent = "未生成";
+      hintEl.textContent = "可点右侧生成 6 位云同步码，或直接复制免服务器秒传链接";
+      webcalBtn.textContent = "📅 一键订阅到 iPhone 苹果日历 (webcal://)";
+      webcalBtn.setAttribute("href", "#need-sync");
+    }
   } else {
-    codeEl.textContent = "未生成";
-    hintEl.textContent = "点右侧一键生成 6 位码，即可解锁动态日历订阅与跨设备同步";
-    document.getElementById("link-webcal-subscribe").setAttribute("href", "#need-sync");
+    // Pure static GitHub Pages mode
+    serverControls.style.display = "none";
+    copyIcsBtn.style.display = "none";
+    codeEl.textContent = "GitHub Pages";
+    hintEl.textContent = "免服务器模式：电脑排好课点右侧「复制跨端秒传链接」发微信，iPhone 点开即同步整表！";
+    webcalBtn.textContent = "📅 一键导入到 iPhone 苹果自带日历（含课前闹钟）";
+    webcalBtn.setAttribute("href", "#static-ics");
   }
+
   renderIosWidgetSimulator();
 }
 
@@ -1063,7 +1124,7 @@ async function triggerNotification(title, body, tag) {
       return;
     }
   } catch (e) {}
-  new Notification(title, { body, icon: "/icons/icon-192.png", tag });
+  new Notification(title, { body, icon: "./icons/icon-192.png", tag });
 }
 
 function checkUpcomingReminders() {
@@ -1100,7 +1161,6 @@ function applyTheme(theme) {
 }
 
 function initEvents() {
-  // Theme
   const savedTheme = localStorage.getItem(THEME_KEY) ||
     (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
   applyTheme(savedTheme);
@@ -1110,7 +1170,6 @@ function initEvents() {
     applyTheme(next);
   });
 
-  // Close modals
   document.querySelectorAll("[data-close-modal]").forEach((btn) => {
     btn.addEventListener("click", () => closeModal(btn.getAttribute("data-close-modal")));
   });
@@ -1120,7 +1179,6 @@ function initEvents() {
     });
   });
 
-  // Topbar & Mobile tab actions
   document.getElementById("btn-open-ocr").addEventListener("click", () => openModal("modal-ocr"));
   document.getElementById("btn-open-ios").addEventListener("click", () => {
     updateIosModalLinks();
@@ -1136,21 +1194,13 @@ function initEvents() {
   document.querySelectorAll("[data-mob-tab]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const tab = btn.getAttribute("data-mob-tab");
-      if (tab === "ocr") {
-        openModal("modal-ocr");
-        return;
-      }
-      if (tab === "ios") {
-        updateIosModalLinks();
-        openModal("modal-ios");
-        return;
-      }
+      if (tab === "ocr") { openModal("modal-ocr"); return; }
+      if (tab === "ios") { updateIosModalLinks(); openModal("modal-ios"); return; }
       document.body.setAttribute("data-mobile-tab", tab);
       document.querySelectorAll("[data-mob-tab]").forEach((b) => b.classList.toggle("active", b === btn));
     });
   });
 
-  // Time simulation pills
   document.querySelectorAll("[data-sim]").forEach((pill) => {
     pill.addEventListener("click", () => {
       state.simMode = pill.getAttribute("data-sim");
@@ -1160,22 +1210,14 @@ function initEvents() {
     });
   });
 
-  // Spotlight clear
   document.getElementById("btn-clear-spotlight").addEventListener("click", () => {
     state.spotlightClass = null;
     renderClassChips();
     renderWeeklyGrid();
   });
 
-  // Week navigation & toggles
-  document.getElementById("btn-prev-week").addEventListener("click", () => {
-    state.weekOffset -= 1;
-    renderAll();
-  });
-  document.getElementById("btn-next-week").addEventListener("click", () => {
-    state.weekOffset += 1;
-    renderAll();
-  });
+  document.getElementById("btn-prev-week").addEventListener("click", () => { state.weekOffset -= 1; renderAll(); });
+  document.getElementById("btn-next-week").addEventListener("click", () => { state.weekOffset += 1; renderAll(); });
   document.getElementById("btn-reset-week").addEventListener("click", () => {
     state.weekOffset = 0;
     state.selectedMobileDateISO = null;
@@ -1196,7 +1238,6 @@ function initEvents() {
   });
   document.getElementById("btn-quick-add-lesson").addEventListener("click", () => openLessonModal(1, "p1"));
 
-  // Lesson Modal Events
   document.getElementById("tab-edit-regular").addEventListener("click", () => switchLessonModalTab("regular"));
   document.getElementById("tab-edit-override").addEventListener("click", () => switchLessonModalTab("override"));
   document.getElementById("inp-ov-type").addEventListener("change", updateOverrideFieldsVisibility);
@@ -1226,7 +1267,6 @@ function initEvents() {
     };
 
     const list = state.schedule.lessons || [];
-    // If moved from editingSlot, remove old slot if different
     if (state.editingSlot && (state.editingSlot.day !== day || state.editingSlot.periodId !== periodId)) {
       const oldIdx = list.findIndex((l) => Number(l.day) === state.editingSlot.day && l.periodId === state.editingSlot.periodId);
       if (oldIdx >= 0) list.splice(oldIdx, 1);
@@ -1275,18 +1315,16 @@ function initEvents() {
 
   document.getElementById("btn-clear-override").addEventListener("click", () => {
     if (!state.editingSlot) return;
-    const ovKey = `${state.editingSlot.dateISO}__${state.editingSlot.periodId}`;
-    delete state.schedule.overrides[ovKey];
+    delete state.schedule.overrides[`${state.editingSlot.dateISO}__${state.editingSlot.periodId}`];
     saveSchedule();
     closeModal("modal-lesson");
     showToast("已恢复为每周常规课程");
   });
 
-  // Drag swap modal buttons
   document.getElementById("btn-swap-this-week").addEventListener("click", () => executeDragSwap(true));
   document.getElementById("btn-swap-permanent").addEventListener("click", () => executeDragSwap(false));
 
-  // OCR Modal Events
+  // OCR Modal
   document.getElementById("ocr-tab-photo").addEventListener("click", () => {
     document.getElementById("ocr-tab-photo").classList.add("active");
     document.getElementById("ocr-tab-text").classList.remove("active");
@@ -1301,14 +1339,8 @@ function initEvents() {
   });
 
   const fileInp = document.getElementById("inp-ocr-file");
-  document.getElementById("btn-pick-photo").addEventListener("click", (e) => {
-    e.stopPropagation();
-    fileInp.click();
-  });
-  document.getElementById("ocr-dropzone").addEventListener("click", (e) => {
-    if (e.target.closest("button")) return;
-    fileInp.click();
-  });
+  document.getElementById("btn-pick-photo").addEventListener("click", (e) => { e.stopPropagation(); fileInp.click(); });
+  document.getElementById("ocr-dropzone").addEventListener("click", (e) => { if (!e.target.closest("button")) fileInp.click(); });
   fileInp.addEventListener("change", async () => {
     const file = fileInp.files?.[0];
     if (!file) return;
@@ -1332,24 +1364,13 @@ function initEvents() {
 
   document.getElementById("btn-try-demo-photo").addEventListener("click", (e) => {
     e.stopPropagation();
-    runImageOcr({ dataUrl: "/sample-timetable.png", isDemoSample: true });
+    runImageOcr({ dataUrl: "./sample-timetable.png", isDemoSample: true });
   });
 
   document.getElementById("btn-copy-ai-prompt").addEventListener("click", async () => {
-    const resp = await fetch("/api/ocr/parse-text", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        promptOnly: true,
-        periods: state.schedule.periods,
-        defaultSubject: state.schedule.defaultSubject
-      })
-    });
-    const data = await resp.json();
-    if (data.prompt) {
-      await navigator.clipboard.writeText(data.prompt);
-      showToast("📋 已复制专属识图提示词！发给豆包/Kimi 连同课表照片即可");
-    }
+    const prompt = clientBuildAiPrompt(state.schedule.periods, state.schedule.defaultSubject);
+    await navigator.clipboard.writeText(prompt);
+    showToast("📋 已复制专属识图提示词！发给豆包/Kimi 连同课表照片即可");
   });
 
   document.getElementById("btn-parse-rawtext").addEventListener("click", async () => {
@@ -1358,18 +1379,9 @@ function initEvents() {
       showToast("请先粘贴文本、Excel表格或JSON内容");
       return;
     }
-    const resp = await fetch("/api/ocr/parse-text", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        text,
-        periods: state.schedule.periods,
-        defaultSubject: state.schedule.defaultSubject
-      })
-    });
-    const res = await resp.json();
+    const res = clientParseText(text, state.schedule.periods, state.schedule.defaultSubject);
     if (!res.lessons || res.lessons.length === 0) {
-      showToast("未能从文本中识别出有效节次，请检查是否包含「周一..周五」与「第1节」等字样");
+      showToast("未能识别出有效节次，请检查是否包含「周一..周五」与「第1节」等字样");
       return;
     }
     state.ocrDraftLessons = res.lessons;
@@ -1393,9 +1405,7 @@ function initEvents() {
       state.schedule.lessons = structuredClone(state.ocrDraftLessons);
     } else {
       const merged = new Map((state.schedule.lessons || []).map((l) => [`${l.day}__${l.periodId}`, l]));
-      for (const item of state.ocrDraftLessons) {
-        merged.set(`${item.day}__${item.periodId}`, item);
-      }
+      for (const item of state.ocrDraftLessons) merged.set(`${item.day}__${item.periodId}`, item);
       state.schedule.lessons = [...merged.values()];
     }
     if (state.schedule.lessons.some((l) => l.day >= 6)) state.schedule.showWeekend = true;
@@ -1404,14 +1414,20 @@ function initEvents() {
     showToast(`🎉 已导入 ${state.ocrDraftLessons.length} 节课程！`);
   });
 
-  // iOS Reminders, Sync & Scriptable Widget Modal Events
+  // Cross-Device Link & iOS Modal Events
+  document.getElementById("btn-copy-share-link").addEventListener("click", async () => {
+    const shareUrl = await encodeScheduleShareUrl(state.schedule);
+    await navigator.clipboard.writeText(shareUrl);
+    showToast("🔗 已复制跨端同步链接！发到手机微信并在 Safari 打开即可秒同步整张课表");
+  });
+
   document.getElementById("btn-create-sync-code").addEventListener("click", async () => {
     try {
       state.syncCode = "";
       const code = await ensureSyncCodeCreated();
       showToast(`✨ 已生成您的专属 6 位同步码：${code}`);
     } catch (e) {
-      showToast("生成同步码失败，请确认后端服务已运行");
+      showToast("当前为纯静态托管，请点击左侧「复制跨端秒传链接」传到手机");
     }
   });
 
@@ -1426,14 +1442,18 @@ function initEvents() {
   });
 
   document.getElementById("link-webcal-subscribe").addEventListener("click", async (e) => {
+    if (!state.hasBackend) {
+      e.preventDefault();
+      downloadOrOpenClientIcs();
+      return;
+    }
     if (!state.syncCode) {
       e.preventDefault();
       try {
         await ensureSyncCodeCreated();
-        const webcalUrl = getIcsHttpUrl().replace(/^https?:\/\//i, "webcal://");
-        window.location.href = webcalUrl;
+        window.location.href = getIcsHttpUrl().replace(/^https?:\/\//i, "webcal://");
       } catch (err) {
-        showToast("无法自动创建同步链接，已为您切换离线 .ics 下载");
+        downloadOrOpenClientIcs();
       }
     }
   });
@@ -1444,37 +1464,17 @@ function initEvents() {
     showToast("已复制动态日历订阅链接，可在苹果「日历 → 添加日历订阅」中粘贴");
   });
 
-  document.getElementById("btn-download-ics").addEventListener("click", async () => {
-    const resp = await fetch("/api/ics/export", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        schedule: state.schedule,
-        syncCode: state.syncCode || "LOCAL",
-        alarmMinutes: state.schedule.reminderMinutes || 15
-      })
-    });
-    const blob = await resp.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `教师课程表-${state.schedule.teacherName || "导出版"}.ics`;
-    a.click();
-    URL.revokeObjectURL(url);
-    showToast("已下载 .ics 日历文件，在 iPhone 打开即可导入提醒");
+  document.getElementById("btn-download-ics").addEventListener("click", () => {
+    downloadOrOpenClientIcs();
   });
 
   document.getElementById("btn-enable-pwa-notify").addEventListener("click", async () => {
     if (!("Notification" in window)) {
-      showToast("iPhone 请先点 Safari 底部分享 →「添加到主屏幕」后再开启通知，或直接使用上方苹果日历订阅");
+      showToast("iPhone 请先点 Safari 底部分享 →「添加到主屏幕」后再开启网页通知，或直接点上方导入苹果日历！");
       return;
     }
     const perm = await Notification.requestPermission();
-    if (perm === "granted") {
-      showToast("🔔 已开启 PWA 网页课前提醒！");
-    } else {
-      showToast("通知权限未授予，推荐使用上方「苹果日历订阅」获得最稳提醒");
-    }
+    showToast(perm === "granted" ? "🔔 已开启 PWA 网页课前提醒！" : "通知未授权，推荐直接点上方导入苹果自带日历提醒");
   });
 
   document.getElementById("btn-test-pwa-notify").addEventListener("click", async () => {
@@ -1490,7 +1490,6 @@ function initEvents() {
     showToast("已发送测试上课提醒通知！");
   });
 
-  // Widget Simulator toggles
   document.getElementById("wsim-mode-today").addEventListener("click", () => {
     state.wsimMode = "today";
     renderIosWidgetSimulator();
@@ -1504,42 +1503,45 @@ function initEvents() {
     renderIosWidgetSimulator();
   });
 
-  async function fetchScriptableCode() {
-    try {
-      await ensureSyncCodeCreated();
-    } catch (e) {}
-    const resp = await fetch("/api/widget/preview-script", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        baseUrl: window.location.origin,
-        syncCode: state.syncCode || "LOCAL",
-        schedule: state.schedule
-      })
-    });
-    const data = await resp.json();
-    return data.script || "";
+  async function buildWidgetScript() {
+    if (state.hasBackend) {
+      try {
+        await ensureSyncCodeCreated();
+        const resp = await fetch("./api/widget/preview-script", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            baseUrl: getAppBaseUrl(),
+            syncCode: state.syncCode || "LOCAL",
+            schedule: state.schedule
+          })
+        });
+        const data = await resp.json();
+        if (data.script) return data.script;
+      } catch (e) {}
+    }
+    return clientBuildScriptableJs(getAppBaseUrl(), state.syncCode || "LOCAL", state.schedule);
   }
 
   document.getElementById("btn-copy-scriptable").addEventListener("click", async () => {
-    const code = await fetchScriptableCode();
+    const code = await buildWidgetScript();
     await navigator.clipboard.writeText(code);
     showToast("📋 已复制专属 Scriptable 小组件代码！粘贴到 iPhone Scriptable 即可");
   });
 
   document.getElementById("btn-download-scriptable").addEventListener("click", async () => {
-    const code = await fetchScriptableCode();
+    const code = await buildWidgetScript();
     const blob = new Blob([code], { type: "application/javascript;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `知时课表小组件-${state.syncCode || "LOCAL"}.js`;
+    a.download = `知时课表小组件.js`;
     a.click();
     URL.revokeObjectURL(url);
     showToast("已下载 Scriptable 小组件脚本 (.js)");
   });
 
-  // Settings Modal Events
+  // Settings Modal
   document.getElementById("btn-preset-45").addEventListener("click", () => {
     draftPeriods = structuredClone(DEFAULT_PERIODS_45);
     renderSettingsPeriodsTable();
@@ -1575,8 +1577,7 @@ function initEvents() {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const txt = await file.text();
-      const parsed = JSON.parse(txt);
+      const parsed = JSON.parse(await file.text());
       if (parsed && Array.isArray(parsed.lessons)) {
         state.schedule = parsed;
         saveSchedule();
@@ -1600,10 +1601,41 @@ function initEvents() {
   });
 }
 
+async function checkImportFromUrlHash() {
+  if (!window.location.hash || !window.location.hash.includes("s=")) return;
+  try {
+    const imported = await decodeScheduleFromHash(window.location.hash);
+    if (imported && Array.isArray(imported.lessons) && Array.isArray(imported.periods)) {
+      state.schedule = imported;
+      saveSchedule();
+      history.replaceState(null, "", window.location.pathname + window.location.search);
+      showToast(`🎉 已成功从分享链接导入「${imported.teacherName || "老师"}」的完整课表！`);
+    }
+  } catch (e) {
+    console.warn("Share hash decode error:", e);
+  }
+}
+
+async function detectBackend() {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 1800);
+    const resp = await fetch("./api/health", { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data && data.ok === true) {
+        state.hasBackend = true;
+      }
+    }
+  } catch (e) {
+    state.hasBackend = false;
+  }
+}
+
 async function bootstrap() {
   initEvents();
 
-  // Restore saved Vision API settings in OCR drawer
   try {
     const cfg = JSON.parse(localStorage.getItem(VISION_CFG_KEY) || "{}");
     if (cfg.apiBase) document.getElementById("inp-vision-base").value = cfg.apiBase;
@@ -1611,17 +1643,20 @@ async function bootstrap() {
     if (cfg.apiKey) document.getElementById("inp-vision-key").value = cfg.apiKey;
   } catch (e) {}
 
-  // Register PWA Service Worker
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/sw.js").catch(() => {});
+    navigator.serviceWorker.register("./sw.js").catch(() => {});
   }
 
-  // Handle URL shortcuts (?sync=XXXXXX, ?action=ocr)
+  await checkImportFromUrlHash();
+  window.addEventListener("hashchange", checkImportFromUrlHash);
+
+  await detectBackend();
+
   const params = new URLSearchParams(window.location.search);
   const urlSync = params.get("sync");
-  if (urlSync) {
+  if (state.hasBackend && urlSync) {
     await pullFromCloud(urlSync);
-  } else if (state.syncCode) {
+  } else if (state.hasBackend && state.syncCode) {
     pullFromCloud(state.syncCode);
   }
   if (params.get("action") === "ocr") {
