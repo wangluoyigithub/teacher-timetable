@@ -251,6 +251,16 @@ class TimetableRequestHandler(BaseHTTPRequestHandler):
         self._send_cors()
         self.end_headers()
 
+    def do_HEAD(self) -> None:
+        parsed = urllib.parse.urlsplit(self.path)
+        if parsed.path == "/api/health":
+            self.send_response(HTTPStatus.OK)
+            self._send_cors()
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.end_headers()
+            return
+        self._serve_static(parsed.path, head_only=True)
+
     def do_GET(self) -> None:
         parsed = urllib.parse.urlsplit(self.path)
         path = parsed.path
@@ -473,7 +483,7 @@ class TimetableRequestHandler(BaseHTTPRequestHandler):
             {"ok": True, "syncCode": code, "updatedAt": updated_at},
         )
 
-    def _serve_static(self, raw_path: str) -> None:
+    def _serve_static(self, raw_path: str, head_only: bool = False) -> None:
         rel = posixpath.normpath(urllib.parse.unquote(raw_path)).lstrip("/")
         if not rel or rel == ".":
             rel = "index.html"
@@ -510,7 +520,8 @@ class TimetableRequestHandler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "public, max-age=300")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
-        self.wfile.write(data)
+        if not head_only:
+            self.wfile.write(data)
 
 
 def create_server(host: str = "0.0.0.0", port: int = 8780, db_path: Path = DB_PATH) -> ThreadingHTTPServer:
