@@ -7,11 +7,17 @@ import {
   CLASS_PALETTES,
   DEFAULT_PERIODS_40,
   DEFAULT_PERIODS_45,
+  DEFAULT_PERIODS_HIGH,
+  SECTION_LABELS,
   WEEKDAY_LABELS,
+  addSmartPeriod,
+  cascadeSectionTimes,
   computeFocusState,
   createInitialSchedule,
   ensureClassColors,
+  ensurePeriodsCoverLessons,
   formatDateISO,
+  generateCustomPeriods,
   getClassPalette,
   getMondayOfWeek,
   getVisiblePeriods,
@@ -432,8 +438,12 @@ function renderWeeklyGrid() {
   let prevSection = null;
 
   for (const period of visiblePeriods) {
-    if (prevSection === "am" && period.section === "pm") {
+    if (prevSection && prevSection !== "noon" && period.section === "noon") {
+      rowsHTML += `<tr class="section-divider-row"><td colspan="${dayCount + 1}">☀️ 午 间 时 段</td></tr>`;
+    } else if ((prevSection === "am" || prevSection === "morning_read") && period.section === "pm") {
       rowsHTML += `<tr class="section-divider-row"><td colspan="${dayCount + 1}">☀️ 午 间 休 息</td></tr>`;
+    } else if (prevSection === "noon" && period.section === "pm") {
+      rowsHTML += `<tr class="section-divider-row"><td colspan="${dayCount + 1}">🌤️ 下 午 时 段</td></tr>`;
     } else if (prevSection && prevSection !== "evening" && period.section === "evening") {
       rowsHTML += `<tr class="section-divider-row"><td colspan="${dayCount + 1}">🌙 晚 自 习 时 段</td></tr>`;
     }
@@ -489,7 +499,31 @@ function renderWeeklyGrid() {
     </tr>`;
   }
 
+  rowsHTML += `
+    <tr class="timetable-add-period-row">
+      <td colspan="${dayCount + 1}">
+        <div class="timetable-add-period-inner">
+          <button type="button" class="btn btn-sm" id="btn-grid-add-period">
+            ➕ 新增下一节课节次（自动顺延时间）
+          </button>
+          <button type="button" class="btn btn-ghost btn-sm" id="btn-grid-manage-periods">
+            ⚙️ 自定义节数与作息（当前共 ${(state.schedule.periods || []).length} 个时段）
+          </button>
+        </div>
+      </td>
+    </tr>
+  `;
+
   tbody.innerHTML = rowsHTML;
+
+  document.getElementById("btn-grid-add-period")?.addEventListener("click", () => {
+    const res = addSmartPeriod(state.schedule.periods, { kind: "regular" });
+    state.schedule.periods = res.periods;
+    saveSchedule();
+    showToast(`✨ 已新增「${res.created.label} (${res.created.start}-${res.created.end})」，点格子即可排课！`);
+  });
+
+  document.getElementById("btn-grid-manage-periods")?.addEventListener("click", openSettingsModal);
 
   tbody.querySelectorAll("[data-add-slot], [data-edit-slot]").forEach((el) => {
     el.addEventListener("click", () => {
@@ -560,6 +594,41 @@ function switchLessonModalTab(mode) {
   document.getElementById("form-lesson-override").style.display = isReg ? "none" : "block";
 }
 
+function populateLessonPeriodSelect(selectedPeriodId) {
+  const pSel = document.getElementById("inp-les-period");
+  pSel.innerHTML =
+    (state.schedule.periods || [])
+      .map((p) => `<option value="${p.id}" ${p.id === selectedPeriodId ? "selected" : ""}>${esc(p.label)} (${p.start}-${p.end})</option>`)
+      .join("") +
+    `<option value="__add_new__">➕ 新增下一节次（自动顺延时间）...</option>`;
+}
+
+function updateLessonModalSubtitle() {
+  const day = Number(document.getElementById("inp-les-day")?.value || state.editingSlot?.day || 1);
+  const periodId = document.getElementById("inp-les-period")?.value || state.editingSlot?.periodId || "p1";
+  const { date } = getEffectiveNow();
+  const m = getMondayOfWeek(date);
+  m.setDate(m.getDate() + state.weekOffset * 7 + (day - 1));
+  const dateISO = formatDateISO(m);
+  if (state.editingSlot) {
+    state.editingSlot.day = day;
+    state.editingSlot.periodId = periodId;
+    state.editingSlot.dateISO = dateISO;
+  }
+  const periodObj = (state.schedule.periods || []).find((p) => p.id === periodId) || { label: periodId, start: "", end: "" };
+  document.getElementById("modal-lesson-subtitle").textContent =
+    `${dateISO} (${WEEKDAY_LABELS[day]}) · ${periodObj.label} ${periodObj.start}-${periodObj.end}`;
+}
+
+function quickAddPeriodFromLessonModal() {
+  const res = addSmartPeriod(state.schedule.periods, { kind: "regular" });
+  state.schedule.periods = res.periods;
+  saveSchedule();
+  populateLessonPeriodSelect(res.created.id);
+  updateLessonModalSubtitle();
+  showToast(`✨ 已新增「${res.created.label} (${res.created.start}-${res.created.end})」，可直接填写课程！`);
+}
+
 function openLessonModal(day = 1, periodId = "p1", dateISO = null) {
   if (!dateISO) {
     const { date } = getEffectiveNow();
@@ -574,10 +643,7 @@ function openLessonModal(day = 1, periodId = "p1", dateISO = null) {
     .map((d) => `<option value="${d}" ${d === day ? "selected" : ""}>${WEEKDAY_LABELS[d]}</option>`)
     .join("");
 
-  const pSel = document.getElementById("inp-les-period");
-  pSel.innerHTML = (state.schedule.periods || [])
-    .map((p) => `<option value="${p.id}" ${p.id === periodId ? "selected" : ""}>${esc(p.label)} (${p.start}-${p.end})</option>`)
-    .join("");
+  populateLessonPeriodSelect(periodId);
 
   const periodObj = (state.schedule.periods || []).find((p) => p.id === periodId) || { label: periodId, start: "", end: "" };
   document.getElementById("modal-lesson-subtitle").textContent =
@@ -811,6 +877,7 @@ async function runImageOcr({ dataUrl, isDemoSample = false }) {
 }
 
 function renderOcrProofGrid() {
+  ensurePeriodsCoverLessons(state.schedule, state.ocrDraftLessons);
   const table = document.getElementById("ocr-proof-table");
   const summary = document.getElementById("ocr-proof-summary");
   summary.textContent = `✅ 已识别出 ${state.ocrDraftLessons.length} 节课程`;
@@ -1069,46 +1136,142 @@ function renderIosWidgetSimulator() {
 
 let draftPeriods = [];
 
+function syncGeneratorControlsFromDraft() {
+  const hasMr = draftPeriods.some((p) => p.section === "morning_read");
+  const amCnt = draftPeriods.filter((p) => p.section === "am").length;
+  const pmCnt = draftPeriods.filter((p) => p.section === "pm" || p.section === "noon").length;
+  const eveCnt = draftPeriods.filter((p) => p.section === "evening").length;
+  const sampleReg = draftPeriods.find((p) => p.section === "am" || p.section === "pm");
+  const dur = sampleReg ? Math.max(25, parseMinutes(sampleReg.end) - parseMinutes(sampleReg.start) || 45) : 45;
+
+  const chkMr = document.getElementById("chk-gen-mr");
+  if (chkMr) chkMr.checked = hasMr;
+  const elAm = document.getElementById("inp-gen-am");
+  if (elAm) elAm.value = String(amCnt);
+  const elPm = document.getElementById("inp-gen-pm");
+  if (elPm) elPm.value = String(pmCnt);
+  const elEve = document.getElementById("inp-gen-eve");
+  if (elEve) elEve.value = String(eveCnt);
+  const elDur = document.getElementById("inp-gen-dur");
+  if (elDur) elDur.value = String(dur);
+}
+
 function openSettingsModal() {
   document.getElementById("inp-set-teacher").value = state.schedule.teacherName || "";
   document.getElementById("inp-set-subject").value = state.schedule.defaultSubject || "";
   document.getElementById("inp-set-semstart").value = state.schedule.semesterStart || "2026-09-07";
   draftPeriods = structuredClone(state.schedule.periods || DEFAULT_PERIODS_45);
+  syncGeneratorControlsFromDraft();
   renderSettingsPeriodsTable();
   openModal("modal-settings");
 }
 
-function renderSettingsPeriodsTable() {
+function renderSettingsPeriodsTable(focusRowIdx = null) {
   const tbl = document.getElementById("settings-periods-table");
+  const countLabel = document.getElementById("settings-periods-count-label");
+  if (countLabel) {
+    const amCnt = draftPeriods.filter((p) => p.section === "am").length;
+    const pmCnt = draftPeriods.filter((p) => p.section === "pm" || p.section === "noon").length;
+    const eveCnt = draftPeriods.filter((p) => p.section === "evening").length;
+    countLabel.textContent =
+      `当前共 ${draftPeriods.length} 个时段（上午 ${amCnt} · 下午 ${pmCnt}${eveCnt ? ` · 晚间 ${eveCnt}` : ""}）· 支持无限新增、调序或删除`;
+  }
+
+  const sectionOpts = Object.entries(SECTION_LABELS);
+
   tbl.innerHTML = `
     <thead>
       <tr>
-        <th>节次名称</th>
-        <th>时段分组</th>
-        <th>上课时间</th>
-        <th>下课时间</th>
+        <th style="width:38px;">#</th>
+        <th style="min-width:116px;">节次名称</th>
+        <th style="min-width:108px;">所属时段</th>
+        <th style="min-width:106px;">上课时间</th>
+        <th style="min-width:106px;">下课时间</th>
+        <th style="min-width:146px;">操作</th>
       </tr>
     </thead>
     <tbody>
       ${draftPeriods.map((p, idx) => `
-        <tr>
-          <td><input class="input" style="padding:4px 7px;font-size:12px;" data-p-idx="${idx}" data-p-field="label" value="${esc(p.label)}" /></td>
-          <td style="font-size:12px; color:var(--ink-muted);">
-            ${p.section === "morning_read" ? "早读" : (p.section === "am" ? "上午" : (p.section === "pm" ? "下午" : "晚自习"))}
+        <tr data-period-row="${idx}">
+          <td style="font-family:var(--font-mono); font-size:11.5px; color:var(--ink-muted);">${idx + 1}</td>
+          <td>
+            <input class="input" style="padding:4px 7px;font-size:12.5px;" data-p-idx="${idx}" data-p-field="label" value="${esc(p.label)}" />
           </td>
-          <td><input class="input" type="time" style="padding:4px 7px;font-size:12px;" data-p-idx="${idx}" data-p-field="start" value="${esc(p.start)}" /></td>
-          <td><input class="input" type="time" style="padding:4px 7px;font-size:12px;" data-p-idx="${idx}" data-p-field="end" value="${esc(p.end)}" /></td>
+          <td>
+            <select class="select" style="padding:4px 6px;font-size:12px;" data-p-idx="${idx}" data-p-field="section">
+              ${sectionOpts.map(([val, name]) => `<option value="${val}" ${p.section === val ? "selected" : ""}>${esc(name)}</option>`).join("")}
+            </select>
+          </td>
+          <td>
+            <input class="input" type="time" style="padding:4px 7px;font-size:12.5px;" data-p-idx="${idx}" data-p-field="start" value="${esc(p.start)}" />
+          </td>
+          <td>
+            <input class="input" type="time" style="padding:4px 7px;font-size:12.5px;" data-p-idx="${idx}" data-p-field="end" value="${esc(p.end)}" />
+          </td>
+          <td>
+            <div class="period-row-actions">
+              <button type="button" class="p-act-btn" data-p-act="insert" data-p-idx="${idx}" title="在此节下方插入一节课">+插</button>
+              <button type="button" class="p-act-btn" data-p-act="up" data-p-idx="${idx}" ${idx === 0 ? "disabled style='opacity:0.35'" : ""} title="上移">↑</button>
+              <button type="button" class="p-act-btn" data-p-act="down" data-p-idx="${idx}" ${idx === draftPeriods.length - 1 ? "disabled style='opacity:0.35'" : ""} title="下移">↓</button>
+              <button type="button" class="p-act-btn danger" data-p-act="delete" data-p-idx="${idx}" title="删除该节次">删</button>
+            </div>
+          </td>
         </tr>
       `).join("")}
     </tbody>
   `;
-  tbl.querySelectorAll("[data-p-idx]").forEach((inp) => {
-    inp.addEventListener("change", () => {
+
+  tbl.querySelectorAll("[data-p-field]").forEach((inp) => {
+    const syncVal = () => {
       const idx = Number(inp.getAttribute("data-p-idx"));
       const field = inp.getAttribute("data-p-field");
       draftPeriods[idx][field] = inp.value;
+      if (field === "section") {
+        syncGeneratorControlsFromDraft();
+        renderSettingsPeriodsTable();
+      }
+    };
+    inp.addEventListener("input", syncVal);
+    inp.addEventListener("change", syncVal);
+  });
+
+  tbl.querySelectorAll("[data-p-act]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idx = Number(btn.getAttribute("data-p-idx"));
+      const act = btn.getAttribute("data-p-act");
+      if (act === "insert") {
+        const res = addSmartPeriod(draftPeriods, { kind: "regular", afterIndex: idx });
+        draftPeriods = res.periods;
+        syncGeneratorControlsFromDraft();
+        renderSettingsPeriodsTable(res.index);
+        showToast(`➕ 已在第 ${idx + 1} 行下方插入「${res.created.label}」`);
+      } else if (act === "up" && idx > 0) {
+        [draftPeriods[idx - 1], draftPeriods[idx]] = [draftPeriods[idx], draftPeriods[idx - 1]];
+        renderSettingsPeriodsTable(idx - 1);
+      } else if (act === "down" && idx < draftPeriods.length - 1) {
+        [draftPeriods[idx + 1], draftPeriods[idx]] = [draftPeriods[idx], draftPeriods[idx + 1]];
+        renderSettingsPeriodsTable(idx + 1);
+      } else if (act === "delete") {
+        if (draftPeriods.length <= 1) {
+          showToast("请至少保留 1 个节次");
+          return;
+        }
+        const target = draftPeriods[idx];
+        const usedCnt = (state.schedule.lessons || []).filter((l) => l.periodId === target.id).length;
+        if (usedCnt > 0 && !window.confirm(`「${target.label}」当前排有 ${usedCnt} 节课，删除该节次后对应格子的课将不再显示，确定删除吗？`)) {
+          return;
+        }
+        draftPeriods.splice(idx, 1);
+        syncGeneratorControlsFromDraft();
+        renderSettingsPeriodsTable();
+      }
     });
   });
+
+  if (focusRowIdx !== null) {
+    const rowEl = tbl.querySelector(`[data-period-row="${focusRowIdx}"]`);
+    rowEl?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
 }
 
 /* ==========================================================================
@@ -1250,6 +1413,22 @@ function initEvents() {
   document.getElementById("tab-edit-regular").addEventListener("click", () => switchLessonModalTab("regular"));
   document.getElementById("tab-edit-override").addEventListener("click", () => switchLessonModalTab("override"));
   document.getElementById("inp-ov-type").addEventListener("change", updateOverrideFieldsVisibility);
+
+  document.getElementById("btn-lesson-add-period").addEventListener("click", () => {
+    quickAddPeriodFromLessonModal();
+  });
+
+  document.getElementById("inp-les-period").addEventListener("change", (e) => {
+    if (e.target.value === "__add_new__") {
+      quickAddPeriodFromLessonModal();
+      return;
+    }
+    updateLessonModalSubtitle();
+  });
+
+  document.getElementById("inp-les-day").addEventListener("change", () => {
+    updateLessonModalSubtitle();
+  });
 
   document.querySelectorAll("[data-memo-fill]").forEach((tag) => {
     tag.addEventListener("click", () => {
@@ -1410,6 +1589,8 @@ function initEvents() {
     if (state.ocrDraftMeta.teacherName) state.schedule.teacherName = state.ocrDraftMeta.teacherName;
     if (state.ocrDraftMeta.defaultSubject) state.schedule.defaultSubject = state.ocrDraftMeta.defaultSubject;
 
+    ensurePeriodsCoverLessons(state.schedule, state.ocrDraftLessons);
+
     if (mode === "replace") {
       state.schedule.lessons = structuredClone(state.ocrDraftLessons);
     } else {
@@ -1550,26 +1731,87 @@ function initEvents() {
     showToast("已下载 Scriptable 小组件脚本 (.js)");
   });
 
-  // Settings Modal
+  // Settings Modal & Dynamic Period Manager
   document.getElementById("btn-preset-45").addEventListener("click", () => {
     draftPeriods = structuredClone(DEFAULT_PERIODS_45);
+    syncGeneratorControlsFromDraft();
     renderSettingsPeriodsTable();
-    showToast("已加载初高中 45 分钟标准作息，点击右下角保存生效");
+    showToast("已加载初高中 45 分钟制（8节+晚二），可继续增删或点右下角保存");
   });
   document.getElementById("btn-preset-40").addEventListener("click", () => {
     draftPeriods = structuredClone(DEFAULT_PERIODS_40);
+    syncGeneratorControlsFromDraft();
     renderSettingsPeriodsTable();
-    showToast("已加载小学 40 分钟标准作息，点击右下角保存生效");
+    showToast("已加载小学/初中 40 分钟制（8节+课后服务），可继续新增节次或保存");
+  });
+  document.getElementById("btn-preset-high").addEventListener("click", () => {
+    draftPeriods = structuredClone(DEFAULT_PERIODS_HIGH);
+    syncGeneratorControlsFromDraft();
+    renderSettingsPeriodsTable();
+    showToast("已加载高中/职校全天制（10节+晚自习三），点击右下角保存生效");
+  });
+
+  document.getElementById("btn-gen-custom-periods").addEventListener("click", () => {
+    const hasMorningRead = document.getElementById("chk-gen-mr").checked;
+    const amCount = Number(document.getElementById("inp-gen-am").value || 0);
+    const pmCount = Number(document.getElementById("inp-gen-pm").value || 0);
+    const eveningCount = Number(document.getElementById("inp-gen-eve").value || 0);
+    const durationMin = Number(document.getElementById("inp-gen-dur").value || 45);
+    if (amCount + pmCount + eveningCount === 0 && !hasMorningRead) {
+      showToast("请至少保留 1 个上课时段");
+      return;
+    }
+    draftPeriods = generateCustomPeriods({
+      hasMorningRead,
+      amCount,
+      pmCount,
+      eveningCount,
+      durationMin,
+      breakMin: 10,
+      amStart: durationMin <= 40 ? "08:20" : "08:00",
+      pmStart: durationMin <= 40 ? "14:00" : "14:10",
+      eveningStart: "19:00"
+    });
+    renderSettingsPeriodsTable();
+    showToast(`⚡ 已生成共 ${draftPeriods.length} 个时段（上午${amCount}+下午${pmCount}${eveningCount ? `+晚${eveningCount}` : ""}），点保存生效`);
+  });
+
+  document.getElementById("btn-cascade-times").addEventListener("click", () => {
+    draftPeriods = cascadeSectionTimes(draftPeriods, 10);
+    renderSettingsPeriodsTable();
+    showToast("⏱️ 已按各时段首节时间 + 10 分钟课间自动顺延重算！");
+  });
+
+  document.getElementById("btn-add-regular-period").addEventListener("click", () => {
+    const res = addSmartPeriod(draftPeriods, { kind: "regular" });
+    draftPeriods = res.periods;
+    syncGeneratorControlsFromDraft();
+    renderSettingsPeriodsTable(res.index);
+    showToast(`➕ 已新增「${res.created.label} (${res.created.start}-${res.created.end})」`);
+  });
+
+  document.getElementById("btn-add-evening-period").addEventListener("click", () => {
+    const res = addSmartPeriod(draftPeriods, { kind: "evening" });
+    draftPeriods = res.periods;
+    syncGeneratorControlsFromDraft();
+    renderSettingsPeriodsTable(res.index);
+    showToast(`🌙 已新增「${res.created.label} (${res.created.start}-${res.created.end})」`);
   });
 
   document.getElementById("btn-save-settings").addEventListener("click", () => {
+    if (!draftPeriods.length) {
+      showToast("请至少保留 1 个节次");
+      return;
+    }
     state.schedule.teacherName = document.getElementById("inp-set-teacher").value.trim() || "老师";
     state.schedule.defaultSubject = document.getElementById("inp-set-subject").value.trim();
     state.schedule.semesterStart = document.getElementById("inp-set-semstart").value || "2026-09-07";
     state.schedule.periods = structuredClone(draftPeriods);
+    if (draftPeriods.some((p) => p.section === "morning_read")) state.schedule.showMorningRead = true;
+    if (draftPeriods.some((p) => p.section === "evening")) state.schedule.showEvening = true;
     saveSchedule();
     closeModal("modal-settings");
-    showToast("已保存学校作息时间与个人设置");
+    showToast(`✅ 已保存学校作息（共 ${draftPeriods.length} 个时段）与个人设置`);
   });
 
   document.getElementById("btn-export-json").addEventListener("click", () => {
@@ -1588,6 +1830,7 @@ function initEvents() {
     try {
       const parsed = JSON.parse(await file.text());
       if (parsed && Array.isArray(parsed.lessons)) {
+        ensurePeriodsCoverLessons(parsed, parsed.lessons);
         state.schedule = parsed;
         saveSchedule();
         closeModal("modal-settings");

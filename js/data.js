@@ -13,6 +13,39 @@ export const CLASS_PALETTES = [
   { idx: 7, bgLight: "#FCECEB", bgDark: "#3B1C1A", inkLight: "#661D1A", inkDark: "#F7A8A4", bar: "#B8433E" }
 ];
 
+export const SECTION_LABELS = {
+  morning_read: "早读/晨会",
+  am: "上午",
+  noon: "午间",
+  pm: "下午",
+  evening: "晚间/晚自习"
+};
+
+const CN_DIGITS = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
+
+export function toChineseNum(n) {
+  const num = Math.max(1, Math.floor(Number(n) || 1));
+  if (num < 10) return CN_DIGITS[num];
+  if (num === 10) return "十";
+  if (num < 20) return `十${CN_DIGITS[num % 10]}`;
+  if (num < 100) {
+    const tens = Math.floor(num / 10);
+    const rem = num % 10;
+    return `${CN_DIGITS[tens]}十${rem ? CN_DIGITS[rem] : ""}`;
+  }
+  return String(num);
+}
+
+export function parseChineseNum(str) {
+  const s = String(str || "").trim();
+  const arab = s.match(/(\d+)/);
+  if (arab) return parseInt(arab[1], 10);
+  for (let i = 30; i >= 1; i--) {
+    if (s.includes(toChineseNum(i))) return i;
+  }
+  return null;
+}
+
 export const DEFAULT_PERIODS_45 = [
   { id: "morning_read", num: "早", label: "早读", section: "morning_read", start: "07:30", end: "07:55" },
   { id: "p1", num: "1", label: "第一节", section: "am", start: "08:05", end: "08:50" },
@@ -34,14 +67,372 @@ export const DEFAULT_PERIODS_40 = [
   { id: "p3", num: "3", label: "第三节", section: "am", start: "10:15", end: "10:55" },
   { id: "p4", num: "4", label: "第四节", section: "am", start: "11:05", end: "11:45" },
   { id: "p5", num: "5", label: "第五节", section: "pm", start: "14:00", end: "14:40" },
-  { id: "p6", num: "6", label: "第六节", section: "pm", start: "14:55", end: "15:35" },
-  { id: "p7", num: "7", label: "第七节", section: "pm", start: "15:50", end: "16:30" },
-  { id: "p8", num: "8", label: "课后服务", section: "pm", start: "16:40", end: "17:30" }
+  { id: "p6", num: "6", label: "第六节", section: "pm", start: "14:50", end: "15:30" },
+  { id: "p7", num: "7", label: "第七节", section: "pm", start: "15:45", end: "16:25" },
+  { id: "p8", num: "8", label: "第八节", section: "pm", start: "16:35", end: "17:15" },
+  { id: "after_service", num: "拓", label: "课后服务", section: "pm", start: "17:25", end: "18:10" }
 ];
+
+export const DEFAULT_PERIODS_HIGH = [
+  { id: "morning_read", num: "早", label: "早读", section: "morning_read", start: "07:20", end: "07:50" },
+  { id: "p1", num: "1", label: "第一节", section: "am", start: "08:00", end: "08:45" },
+  { id: "p2", num: "2", label: "第二节", section: "am", start: "08:55", end: "09:40" },
+  { id: "p3", num: "3", label: "第三节", section: "am", start: "10:00", end: "10:45" },
+  { id: "p4", num: "4", label: "第四节", section: "am", start: "10:55", end: "11:40" },
+  { id: "p5", num: "5", label: "第五节", section: "am", start: "11:50", end: "12:30" },
+  { id: "p6", num: "6", label: "第六节", section: "pm", start: "14:10", end: "14:55" },
+  { id: "p7", num: "7", label: "第七节", section: "pm", start: "15:05", end: "15:50" },
+  { id: "p8", num: "8", label: "第八节", section: "pm", start: "16:05", end: "16:50" },
+  { id: "p9", num: "9", label: "第九节", section: "pm", start: "17:00", end: "17:45" },
+  { id: "p10", num: "10", label: "第十节", section: "pm", start: "17:55", end: "18:35" },
+  { id: "eve1", num: "晚1", label: "晚自习一", section: "evening", start: "19:10", end: "20:00" },
+  { id: "eve2", num: "晚2", label: "晚自习二", section: "evening", start: "20:10", end: "21:00" },
+  { id: "eve3", num: "晚3", label: "晚自习三", section: "evening", start: "21:10", end: "22:00" }
+];
+
+export function pad2(n) {
+  return n < 10 ? `0${n}` : `${n}`;
+}
+
+export function formatDateISO(dateObj) {
+  return `${dateObj.getFullYear()}-${pad2(dateObj.getMonth() + 1)}-${pad2(dateObj.getDate())}`;
+}
+
+export function parseMinutes(hhmm) {
+  const [h, m] = String(hhmm || "08:00").split(":");
+  return (parseInt(h, 10) || 0) * 60 + (parseInt(m, 10) || 0);
+}
+
+export function minutesToHHMM(totalMin) {
+  const clamped = ((totalMin % 1440) + 1440) % 1440;
+  return `${pad2(Math.floor(clamped / 60))}:${pad2(clamped % 60)}`;
+}
+
+function getRegularPeriodNumber(period) {
+  if (!period) return null;
+  if (period.section === "morning_read" || period.section === "evening") return null;
+  const label = String(period.label || "");
+  const mLabel = label.match(/^第([一二三四五六七八九十\d]+)节$/);
+  if (mLabel) return parseChineseNum(mLabel[1]);
+  const mId = String(period.id || "").match(/^p(\d+)$/);
+  if (mId && !label.includes("晚") && !label.includes("服务")) return parseInt(mId[1], 10);
+  return null;
+}
+
+/**
+ * Generate a full custom period list from teacher-specified counts & lesson duration.
+ */
+export function generateCustomPeriods({
+  hasMorningRead = true,
+  amCount = 4,
+  pmCount = 4,
+  eveningCount = 2,
+  durationMin = 45,
+  breakMin = 10,
+  amStart = "08:05",
+  pmStart = "14:15",
+  eveningStart = "19:00"
+} = {}) {
+  const amN = Math.max(0, Math.min(10, parseInt(amCount, 10) || 0));
+  const pmN = Math.max(0, Math.min(10, parseInt(pmCount, 10) || 0));
+  const evN = Math.max(0, Math.min(6, parseInt(eveningCount, 10) || 0));
+  const dur = Math.max(20, Math.min(150, parseInt(durationMin, 10) || 45));
+  const brk = Math.max(0, Math.min(40, parseInt(breakMin, 10) || 10));
+
+  const list = [];
+  if (hasMorningRead) {
+    const mrEnd = Math.max(360, parseMinutes(amStart) - 10);
+    const mrStart = Math.max(330, mrEnd - 25);
+    list.push({
+      id: "morning_read",
+      num: "早",
+      label: "早读",
+      section: "morning_read",
+      start: minutesToHHMM(mrStart),
+      end: minutesToHHMM(mrEnd)
+    });
+  }
+
+  let lessonCounter = 0;
+  let curMin = parseMinutes(amStart);
+  for (let i = 0; i < amN; i++) {
+    lessonCounter++;
+    const st = curMin;
+    const ed = st + dur;
+    list.push({
+      id: `p${lessonCounter}`,
+      num: String(lessonCounter),
+      label: `第${toChineseNum(lessonCounter)}节`,
+      section: "am",
+      start: minutesToHHMM(st),
+      end: minutesToHHMM(ed)
+    });
+    // Give a 20-min recess after period 2 in the morning when amN >= 3
+    curMin = ed + (i === 1 && amN >= 3 ? Math.max(brk, 20) : brk);
+  }
+
+  curMin = parseMinutes(pmStart);
+  for (let i = 0; i < pmN; i++) {
+    lessonCounter++;
+    const st = curMin;
+    const ed = st + dur;
+    list.push({
+      id: `p${lessonCounter}`,
+      num: String(lessonCounter),
+      label: `第${toChineseNum(lessonCounter)}节`,
+      section: "pm",
+      start: minutesToHHMM(st),
+      end: minutesToHHMM(ed)
+    });
+    curMin = ed + (i === 1 && pmN >= 3 ? Math.max(brk, 15) : brk);
+  }
+
+  curMin = parseMinutes(eveningStart);
+  const eveDur = Math.max(dur, 45);
+  for (let i = 1; i <= evN; i++) {
+    const st = curMin;
+    const ed = st + eveDur;
+    // Preserve legacy p9/p10 IDs when total daytime lessons <= 8 so default evening lessons keep working
+    const legacyId = lessonCounter <= 8 && i <= 2 ? `p${8 + i}` : `eve${i}`;
+    list.push({
+      id: legacyId,
+      num: `晚${i}`,
+      label: `晚自习${toChineseNum(i)}`,
+      section: "evening",
+      start: minutesToHHMM(st),
+      end: minutesToHHMM(ed)
+    });
+    curMin = ed + brk;
+  }
+
+  return list;
+}
+
+/**
+ * Smartly add a new period into an existing period array (in-place clone returned),
+ * auto-computing its Chinese ordinal name, start/end times, and nudging any overlapping
+ * later slots in the same section.
+ */
+export function addSmartPeriod(periods, { kind = "regular", afterIndex = null, breakMin = 10 } = {}) {
+  const next = structuredClone(periods || []);
+  const usedIds = new Set(next.map((p) => p.id));
+
+  const uniqueId = (preferred) => {
+    if (!usedIds.has(preferred)) return preferred;
+    let suffix = 2;
+    while (usedIds.has(`${preferred}_${suffix}`)) suffix++;
+    return `${preferred}_${suffix}`;
+  };
+
+  let maxRegNum = 0;
+  let lastRegIdx = -1;
+  next.forEach((p, idx) => {
+    const n = getRegularPeriodNumber(p);
+    if (n !== null) {
+      if (n > maxRegNum) maxRegNum = n;
+      lastRegIdx = idx;
+    }
+  });
+
+  if (kind === "evening") {
+    const eveList = next.filter((p) => p.section === "evening");
+    const eveNum = eveList.length + 1;
+    const ref = eveList[eveList.length - 1];
+    const dur = ref ? Math.max(30, parseMinutes(ref.end) - parseMinutes(ref.start)) : 50;
+    const st = ref ? parseMinutes(ref.end) + breakMin : 19 * 60;
+    const newPeriod = {
+      id: uniqueId(`eve${eveNum}`),
+      num: `晚${eveNum}`,
+      label: `晚自习${toChineseNum(eveNum)}`,
+      section: "evening",
+      start: minutesToHHMM(st),
+      end: minutesToHHMM(st + dur)
+    };
+    next.push(newPeriod);
+    return { periods: next, created: newPeriod, index: next.length - 1 };
+  }
+
+  // Insert after a specific row or after the last regular lesson
+  const targetAfterIdx =
+    afterIndex !== null && afterIndex >= 0 && afterIndex < next.length
+      ? afterIndex
+      : (lastRegIdx >= 0 ? lastRegIdx : next.length - 1);
+
+  const ref = next[targetAfterIdx] || null;
+  const inferredDur = ref
+    ? Math.max(25, Math.min(120, parseMinutes(ref.end) - parseMinutes(ref.start) || 45))
+    : 45;
+
+  let section = ref ? ref.section : "pm";
+  if (kind === "regular" && (section === "morning_read" || section === "evening")) {
+    section = "pm";
+  }
+
+  const nextNum = maxRegNum + 1;
+  const isInsertingMiddle =
+    afterIndex !== null && lastRegIdx >= 0 && afterIndex < lastRegIdx && ref?.section !== "evening";
+
+  const label = isInsertingMiddle
+    ? `加课(${SECTION_LABELS[section] || "时段"})`
+    : `第${toChineseNum(nextNum)}节`;
+  const preferredId = isInsertingMiddle ? `slot_${next.length + 1}` : `p${nextNum}`;
+
+  let startMin = 16 * 60 + 35;
+  if (ref && ref.section === section) {
+    startMin = parseMinutes(ref.end) + breakMin;
+  } else if (section === "am") {
+    startMin = 8 * 60;
+  } else if (section === "pm") {
+    startMin = 14 * 60;
+  }
+
+  const newPeriod = {
+    id: uniqueId(preferredId),
+    num: isInsertingMiddle ? "加" : String(nextNum),
+    label,
+    section,
+    start: minutesToHHMM(startMin),
+    end: minutesToHHMM(startMin + inferredDur)
+  };
+
+  const insertPos = targetAfterIdx >= 0 ? targetAfterIdx + 1 : next.length;
+  next.splice(insertPos, 0, newPeriod);
+
+  // Nudge immediately following periods in the SAME section if they now overlap
+  let prevEnd = parseMinutes(newPeriod.end);
+  for (let i = insertPos + 1; i < next.length; i++) {
+    if (next[i].section !== section) break;
+    const curSt = parseMinutes(next[i].start);
+    const curDur = Math.max(25, parseMinutes(next[i].end) - curSt || inferredDur);
+    if (curSt < prevEnd + 5) {
+      const shiftedSt = prevEnd + breakMin;
+      next[i].start = minutesToHHMM(shiftedSt);
+      next[i].end = minutesToHHMM(shiftedSt + curDur);
+      prevEnd = shiftedSt + curDur;
+    } else {
+      break;
+    }
+  }
+
+  return { periods: next, created: newPeriod, index: insertPos };
+}
+
+/**
+ * Recalculate start/end times sequentially within each section while preserving
+ * each section's first period start time and each period's duration.
+ */
+export function cascadeSectionTimes(periods, breakMin = 10) {
+  const next = structuredClone(periods || []);
+  const brk = Math.max(0, Math.min(40, parseInt(breakMin, 10) || 10));
+  let curSection = null;
+  let prevEnd = 0;
+
+  for (const p of next) {
+    const st = parseMinutes(p.start);
+    const ed = parseMinutes(p.end);
+    const dur = ed > st ? ed - st : 45;
+    if (p.section !== curSection) {
+      curSection = p.section;
+      p.start = minutesToHHMM(st);
+      p.end = minutesToHHMM(st + dur);
+      prevEnd = st + dur;
+    } else {
+      const newSt = prevEnd + brk;
+      p.start = minutesToHHMM(newSt);
+      p.end = minutesToHHMM(newSt + dur);
+      prevEnd = newSt + dur;
+    }
+  }
+  return next;
+}
+
+/**
+ * Ensure schedule.periods contains definitions for all periodIds referenced in lessons
+ * (e.g. when importing a 10- or 12-period timetable onto a 7- or 8-period schedule).
+ */
+export function ensurePeriodsCoverLessons(schedule, lessons = null) {
+  if (!Array.isArray(schedule.periods) || schedule.periods.length === 0) {
+    schedule.periods = structuredClone(DEFAULT_PERIODS_45);
+  }
+  const targetLessons = lessons || schedule.lessons || [];
+  const existingIds = new Set(schedule.periods.map((p) => p.id));
+  const missingIds = [];
+
+  for (const l of targetLessons) {
+    if (l?.periodId && !existingIds.has(l.periodId)) {
+      existingIds.add(l.periodId);
+      missingIds.push(l.periodId);
+    }
+  }
+  if (!missingIds.length) return schedule.periods;
+
+  // Sort missing IDs so p8, p9, p10... are added in ascending order
+  missingIds.sort((a, b) => {
+    const na = parseInt((a.match(/\d+/) || ["99"])[0], 10);
+    const nb = parseInt((b.match(/\d+/) || ["99"])[0], 10);
+    return na - nb;
+  });
+
+  for (const pid of missingIds) {
+    if (pid === "morning_read") {
+      schedule.periods.unshift({
+        id: "morning_read",
+        num: "早",
+        label: "早读",
+        section: "morning_read",
+        start: "07:30",
+        end: "07:55"
+      });
+      schedule.showMorningRead = true;
+      continue;
+    }
+    const eveMatch = pid.match(/^eve(\d+)$/i);
+    if (eveMatch) {
+      const res = addSmartPeriod(schedule.periods, { kind: "evening" });
+      res.created.id = pid;
+      res.created.num = `晚${eveMatch[1]}`;
+      res.created.label = `晚自习${toChineseNum(Number(eveMatch[1]))}`;
+      schedule.periods = res.periods;
+      schedule.showEvening = true;
+      continue;
+    }
+    const pMatch = pid.match(/^p(\d+)$/i);
+    if (pMatch) {
+      const num = parseInt(pMatch[1], 10);
+      // Fill any intermediate regular lessons up to `num` so the table has no missing gaps!
+      let guard = 0;
+      while (!schedule.periods.some((p) => p.id === pid) && guard < 20) {
+        guard++;
+        const res = addSmartPeriod(schedule.periods, { kind: "regular" });
+        const createdNum = getRegularPeriodNumber(res.created);
+        if (createdNum === num) {
+          res.created.id = pid;
+        }
+        schedule.periods = res.periods;
+        if (createdNum && createdNum >= num) break;
+      }
+      if (!schedule.periods.some((p) => p.id === pid)) {
+        const res = addSmartPeriod(schedule.periods, { kind: "regular" });
+        res.created.id = pid;
+        res.created.num = String(num);
+        res.created.label = `第${toChineseNum(num)}节`;
+        schedule.periods = res.periods;
+      }
+      continue;
+    }
+    // Generic custom period ID
+    const res = addSmartPeriod(schedule.periods, { kind: "regular" });
+    res.created.id = pid;
+    res.created.label = pid;
+    schedule.periods = res.periods;
+  }
+
+  return schedule.periods;
+}
 
 export function createInitialSchedule() {
   const base = {
-    version: "1.0.0",
+    version: "1.3.0",
     teacherName: "林知夏",
     defaultSubject: "数学",
     semesterStart: "2026-09-07",
@@ -105,24 +496,6 @@ export function ensureClassColors(schedule) {
 export function getClassPalette(schedule, className) {
   const idx = Number((schedule.classColors || {})[className] ?? 0) % CLASS_PALETTES.length;
   return CLASS_PALETTES[idx];
-}
-
-export function pad2(n) {
-  return n < 10 ? `0${n}` : `${n}`;
-}
-
-export function formatDateISO(dateObj) {
-  return `${dateObj.getFullYear()}-${pad2(dateObj.getMonth() + 1)}-${pad2(dateObj.getDate())}`;
-}
-
-export function parseMinutes(hhmm) {
-  const [h, m] = String(hhmm || "08:00").split(":");
-  return (parseInt(h, 10) || 0) * 60 + (parseInt(m, 10) || 0);
-}
-
-export function minutesToHHMM(totalMin) {
-  const clamped = ((totalMin % 1440) + 1440) % 1440;
-  return `${pad2(Math.floor(clamped / 60))}:${pad2(clamped % 60)}`;
 }
 
 export function getMondayOfWeek(dateObj) {
