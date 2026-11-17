@@ -20,10 +20,12 @@ DAY_MAP = {
     "7": 7, "日": 7, "天": 7, "周日": 7, "周天": 7, "星期日": 7, "星期天": 7, "sun": 7, "sunday": 7,
 }
 
-CN_NUM_MAP = {
-    "一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
-    "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
-}
+CN_NUM_ORDERED = [
+    ("二十", 20), ("十九", 19), ("十八", 18), ("十七", 17), ("十六", 16),
+    ("十五", 15), ("十四", 14), ("十三", 13), ("十二", 12), ("十一", 11),
+    ("十", 10), ("九", 9), ("八", 8), ("七", 7), ("六", 6),
+    ("五", 5), ("四", 4), ("三", 3), ("二", 2), ("一", 1),
+]
 
 
 def build_ai_prompt(periods: list[dict[str, Any]], default_subject: str = "") -> str:
@@ -34,8 +36,9 @@ def build_ai_prompt(periods: list[dict[str, Any]], default_subject: str = "") ->
     subj_hint = f"（该老师默认任教学科为「{default_subject}」，若格子中未写学科名请自动填入「{default_subject}」）" if default_subject else ""
     return f"""你是一个专业的「中国中小学/职校教师课程表」结构化识别助手。请仔细识别这张教师课表图片中的所有课程格子（注意分辨表头方向、合并单元格、早读/午休/晚自习分隔行）{subj_hint}。
 
-当前系统支持的节次列表如下：
+当前系统已配置的节次列表如下：
 {period_desc}
+（注：若图中课表节数多于上方列表，如第9节、第10节、第11节、第12节或晚自习三，请直接输出 "p9"、"p10"、"p11"、"p12" 或 "eve3"，系统会自动扩展节次！）
 
 请严格只输出如下格式的 JSON（不要添加多余解释）：
 ```json
@@ -57,7 +60,7 @@ def build_ai_prompt(periods: list[dict[str, Any]], default_subject: str = "") ->
 ```
 字段规则：
 1. `day`: 1~7 的整数（1=周一，5=周五，6=周六，7=周日）。
-2. `periodId`: 必须对应上方节次列表中的 `periodId`（例如早读用 `morning_read`，第1节用 `p1`…第8节用 `p8`，晚自习一用 `p9`，晚自习二用 `p10`）。如果是两节连堂（如第1-2节合并单元格），请拆成两条记录（`p1` 和 `p2` 各一条）！
+2. `periodId`: 优先对应上方节次列表中的 `periodId`；若图中节次超出列表，用 `p9`/`p10`/`p11`… 或 `eve3`。如果是两节连堂（如第1-2节合并单元格），请拆成两条记录（`p1` 和 `p2` 各一条）！
 3. `className`: 授课班级名称（如 `高一(3)班`、`七年级2班`、`24电商1班`）。教师课表最重要的是班级，请保持格式统一！
 4. `subject`: 课程/科目名称（如 `数学`、`语文`、`班会`、`早读`）。
 5. `room`: 教室或地点（若图中未标注则填空字符串 `""`）。
@@ -65,7 +68,7 @@ def build_ai_prompt(periods: list[dict[str, Any]], default_subject: str = "") ->
 
 
 def normalize_period_id(raw_period: Any, periods: list[dict[str, Any]]) -> list[str]:
-    """Normalize arbitrary period text like '1', '第一节', '3-4节', '早读', '晚1' into valid periodIds."""
+    """Normalize arbitrary period text like '1', '第一节', '11节', '3-4节', '早读', '晚1' into periodIds."""
     valid_ids = {p["id"] for p in periods}
     s = str(raw_period or "").strip()
     if not s:
@@ -73,38 +76,41 @@ def normalize_period_id(raw_period: Any, periods: list[dict[str, Any]]) -> list[
     if s in valid_ids:
         return [s]
 
+    for p in periods:
+        if p.get("label") == s or p.get("num") == s:
+            return [p["id"]]
+
     s_lower = s.lower()
+    if re.match(r"^(p\d{1,2}|eve\d)$", s_lower):
+        return [s_lower]
+
     if "早" in s_lower:
-        return ["morning_read"] if "morning_read" in valid_ids else []
+        return ["morning_read"]
 
     if "晚" in s_lower:
+        if "3" in s_lower or "三" in s_lower:
+            return ["eve3"]
         if "2" in s_lower or "二" in s_lower:
-            return ["p10"] if "p10" in valid_ids else []
-        return ["p9"] if "p9" in valid_ids else []
+            return ["p10"] if "p10" in valid_ids else ["eve2"]
+        return ["p9"] if "p9" in valid_ids else ["eve1"]
 
     # Check range like "1-2", "3~4节", "第1、2节"
     range_match = re.search(r"(\d+)\s*[-~至到、,，]\s*(\d+)", s)
     if range_match:
         a, b = int(range_match.group(1)), int(range_match.group(2))
-        if 1 <= a <= b <= 12:
-            return [f"p{i}" for i in range(a, b + 1) if f"p{i}" in valid_ids]
+        if 1 <= a <= b <= 20:
+            return [f"p{i}" for i in range(a, b + 1)]
 
     num_match = re.search(r"(\d+)", s)
     if num_match:
-        pid = f"p{int(num_match.group(1))}"
-        if pid in valid_ids:
-            return [pid]
+        n = int(num_match.group(1))
+        if 1 <= n <= 20:
+            return [f"p{n}"]
 
-    for cn_char, num_val in CN_NUM_MAP.items():
-        if cn_char in s:
-            pid = f"p{num_val}"
-            if pid in valid_ids:
-                return [pid]
+    for cn_str, num_val in CN_NUM_ORDERED:
+        if cn_str in s:
+            return [f"p{num_val}"]
 
-    # Match by period label
-    for p in periods:
-        if p.get("label") == s or p.get("num") == s:
-            return [p["id"]]
     return []
 
 

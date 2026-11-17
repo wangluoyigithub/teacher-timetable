@@ -178,7 +178,10 @@
             <select class="select" id="inp-les-day"></select>
           </div>
           <div class="form-field">
-            <label for="inp-les-period">节次</label>
+            <label for="inp-les-period" style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+              <span>节次</span>
+              <button type="button" class="quick-tag" id="btn-lesson-add-period" title="当前节次不够？点击直接新增下一节课">+ 新增节次</button>
+            </label>
             <select class="select" id="inp-les-period"></select>
           </div>
           <div class="form-field">
@@ -512,13 +515,13 @@
     <div class="modal-panel modal-wide">
       <div class="modal-head">
         <div>
-          <h2 id="modal-settings-title">⏰ 学校作息时间与个人设置</h2>
-          <p>内置中小学标准节次模板，支持一键批量顺延每节课时长与数据备份</p>
+          <h2 id="modal-settings-title">⏰ 学校作息时间与节次自由管理</h2>
+          <p>节数不设上限：可自由新增第8/9/10+节课、删除或排序任意时段，也支持按上下午节数一键排表</p>
         </div>
         <button type="button" class="btn btn-ghost btn-sm" data-close-modal="modal-settings">✕</button>
       </div>
 
-      <div class="form-grid" style="margin-bottom:16px;">
+      <div class="form-grid" style="margin-bottom:12px;">
         <div class="form-field">
           <label for="inp-set-teacher">教师称呼</label>
           <input class="input" type="text" id="inp-set-teacher" placeholder="如：林老师" />
@@ -532,16 +535,63 @@
           <input class="input" type="date" id="inp-set-semstart" />
         </div>
         <div class="form-field">
-          <label>一键套用标准作息模板</label>
-          <div style="display:flex; gap:8px;">
-            <button type="button" class="btn btn-sm" id="btn-preset-45">初高中 45 分钟制</button>
-            <button type="button" class="btn btn-sm" id="btn-preset-40">小学 40 分钟制</button>
+          <label>常用学校作息预设模板</label>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <button type="button" class="btn btn-sm" id="btn-preset-45">初高中 45分 (8节+晚二)</button>
+            <button type="button" class="btn btn-sm" id="btn-preset-40">小学/初中 40分 (8节+课后)</button>
+            <button type="button" class="btn btn-sm" id="btn-preset-high">高中/职校 (10节+晚三)</button>
           </div>
         </div>
       </div>
 
-      <div style="max-height:300px; overflow-y:auto; border:1px solid var(--border-hairline); border-radius:var(--radius-md); padding:10px;">
-        <table class="proof-grid-table" id="settings-periods-table"></table>
+      <!-- Quick Custom Period Count Generator -->
+      <div class="period-gen-bar">
+        <span class="period-gen-title">⚡ 自定义节数一键生成：</span>
+        <label class="period-gen-chk">
+          <input type="checkbox" id="chk-gen-mr" checked />
+          <span>含早读</span>
+        </label>
+        <label class="period-gen-item">
+          <span>上午</span>
+          <input class="input period-gen-num" type="number" id="inp-gen-am" min="0" max="10" value="4" />
+          <span>节</span>
+        </label>
+        <label class="period-gen-item">
+          <span>下午</span>
+          <input class="input period-gen-num" type="number" id="inp-gen-pm" min="0" max="10" value="4" />
+          <span>节</span>
+        </label>
+        <label class="period-gen-item">
+          <span>晚间</span>
+          <input class="input period-gen-num" type="number" id="inp-gen-eve" min="0" max="6" value="2" />
+          <span>节</span>
+        </label>
+        <label class="period-gen-item">
+          <span>单节</span>
+          <input class="input period-gen-num" type="number" id="inp-gen-dur" min="20" max="120" step="5" value="45" style="width:58px;" />
+          <span>分</span>
+        </label>
+        <button type="button" class="btn btn-amber btn-sm" id="btn-gen-custom-periods">按此节数生成</button>
+      </div>
+
+      <div class="period-list-header">
+        <span id="settings-periods-count-label">当前共 11 个时段 · 可随时增删改</span>
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-cascade-times" title="保留每个时段首节开始时间与时长，按10分钟课间自动顺延后续时间">
+          ⏱️ 按课间 10 分钟顺延重算时间
+        </button>
+      </div>
+
+      <div class="period-table-wrap">
+        <table class="proof-grid-table period-editor-table" id="settings-periods-table"></table>
+      </div>
+
+      <div class="period-add-bar">
+        <button type="button" class="btn btn-primary btn-sm" id="btn-add-regular-period">
+          ➕ 新增一节课（自动生成第8/9/10…节并顺延时间）
+        </button>
+        <button type="button" class="btn btn-sm" id="btn-add-evening-period">
+          🌙 新增晚自习 / 晚课时段
+        </button>
       </div>
 
       <div class="modal-foot" style="flex-wrap:wrap;">

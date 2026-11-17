@@ -48,7 +48,12 @@ const DAY_MAP = {
   "7": 7, "日": 7, "天": 7, "周日": 7, "星期日": 7, "星期天": 7, "sun": 7
 };
 
-const CN_NUM = { "一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10 };
+const CN_NUM_ORDERED = [
+  ["二十", 20], ["十九", 19], ["十八", 18], ["十七", 17], ["十六", 16],
+  ["十五", 15], ["十四", 14], ["十三", 13], ["十二", 12], ["十一", 11],
+  ["十", 10], ["九", 9], ["八", 8], ["七", 7], ["六", 6],
+  ["五", 5], ["四", 4], ["三", 3], ["二", 2], ["一", 1]
+];
 
 export function clientBuildAiPrompt(periods, defaultSubject = "") {
   const periodDesc = (periods || [])
@@ -57,8 +62,9 @@ export function clientBuildAiPrompt(periods, defaultSubject = "") {
   const hint = defaultSubject ? `（该老师默认任教学科为「${defaultSubject}」，若格子中未写学科名请自动填入「${defaultSubject}」）` : "";
   return `你是一个专业的「中国中小学/职校教师课程表」结构化识别助手。请仔细识别这张教师课表图片中的所有课程格子（注意分辨表头方向、合并单元格、早读/午休/晚自习分隔行）${hint}。
 
-当前系统支持的节次列表如下：
+当前系统已配置的节次列表如下：
 ${periodDesc}
+（注：如果图片中的课表节数多于上方列表，例如还有第9节、第10节、第11节、第12节或晚自习三，请直接输出 "p9"、"p10"、"p11"、"p12" 或 "eve3"，系统会自动扩展课表节次！）
 
 请严格只输出如下格式的 JSON（不要添加多余解释）：
 \`\`\`json
@@ -78,7 +84,7 @@ ${periodDesc}
   ]
 }
 \`\`\`
-字段规则：day 为 1~7（1=周一..7=周日）；periodId 对应上方列表（如连堂 1-2 节请拆为 p1 和 p2 两条）；className 填授课班级名称！`;
+字段规则：day 为 1~7（1=周一..7=周日）；periodId 优先对应上方列表，超出节次用 p8/p9/p10...（如连堂 1-2 节请拆为 p1 和 p2 两条）；className 填授课班级名称！`;
 }
 
 function normalizeDay(raw) {
@@ -96,28 +102,34 @@ function normalizePeriodIds(raw, periods) {
   const s = String(raw || "").trim();
   if (!s) return [];
   if (valid.has(s)) return [s];
-  if (s.includes("早")) return valid.has("morning_read") ? ["morning_read"] : [];
+  // Match by custom period label/num first
+  for (const p of periods || []) {
+    if (p.label === s || p.num === s) return [p.id];
+  }
+  if (/^p\d{1,2}$/i.test(s) || /^eve\d$/i.test(s)) return [s.toLowerCase()];
+  if (s.includes("早")) return ["morning_read"];
   if (s.includes("晚")) {
-    if (s.includes("2") || s.includes("二")) return valid.has("p10") ? ["p10"] : [];
-    return valid.has("p9") ? ["p9"] : [];
+    if (s.includes("3") || s.includes("三")) return valid.has("eve3") ? ["eve3"] : ["eve3"];
+    if (s.includes("2") || s.includes("二")) return valid.has("p10") ? ["p10"] : (valid.has("eve2") ? ["eve2"] : ["eve2"]);
+    return valid.has("p9") ? ["p9"] : (valid.has("eve1") ? ["eve1"] : ["eve1"]);
   }
   const range = s.match(/(\d+)\s*[-~至到、,，]\s*(\d+)/);
   if (range) {
     const a = Number(range[1]);
     const b = Number(range[2]);
-    const out = [];
-    for (let i = a; i <= b; i++) {
-      if (valid.has(`p${i}`)) out.push(`p${i}`);
+    if (a >= 1 && b >= a && b <= 20) {
+      const out = [];
+      for (let i = a; i <= b; i++) out.push(`p${i}`);
+      return out;
     }
-    return out;
   }
   const num = s.match(/(\d+)/);
-  if (num && valid.has(`p${Number(num[1])}`)) return [`p${Number(num[1])}`];
-  for (const [cn, v] of Object.entries(CN_NUM)) {
-    if (s.includes(cn) && valid.has(`p${v}`)) return [`p${v}`];
+  if (num) {
+    const n = Number(num[1]);
+    if (n >= 1 && n <= 20) return [`p${n}`];
   }
-  for (const p of periods || []) {
-    if (p.label === s || p.num === s) return [p.id];
+  for (const [cn, v] of CN_NUM_ORDERED) {
+    if (s.includes(cn)) return [`p${v}`];
   }
   return [];
 }
