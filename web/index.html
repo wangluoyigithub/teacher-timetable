@@ -5,15 +5,34 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>知时课表 · 教师极简智能课程表 (PWA)</title>
   <meta name="description" content="专为中小学与职校教师打造的极简智能课程表 PWA：Web端一屏总览、今日上完自动预览明日课程、拍照AI识别导入、支持iPhone日历准时提醒与桌面小组件。" />
-  <meta name="theme-color" content="#235E47" id="meta-theme-color" />
+  <meta name="theme-color" content="#FAF8F4" id="meta-theme-color" />
 
-  <!-- iOS Safari PWA Home Screen Support -->
+  <!-- iOS Safari & Standalone PWA Support -->
+  <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="知时课表" />
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
   <link rel="icon" type="image/svg+xml" href="./icons/icon.svg" />
   <link rel="manifest" href="./manifest.webmanifest" />
+
+  <!-- Pre-paint Theme & iOS Status-Bar Sync (prevents white status bar flash in dark mode) -->
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem("teacher_timetable_theme");
+        var theme = (saved === "dark" || saved === "light")
+          ? saved
+          : (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        var bg = theme === "dark" ? "#161A1D" : "#FAF8F4";
+        document.documentElement.setAttribute("data-theme", theme);
+        document.documentElement.style.colorScheme = theme;
+        document.documentElement.style.backgroundColor = bg;
+        var meta = document.getElementById("meta-theme-color");
+        if (meta) meta.setAttribute("content", bg);
+      } catch (e) {}
+    })();
+  </script>
 
   <link rel="stylesheet" href="./styles/index.css" />
 </head>
@@ -25,10 +44,10 @@
         <img src="./icons/icon.svg" alt="知时课表图标" class="brand-logo" />
         <div class="brand-titles">
           <h1>
-            <span>知时课表</span>
-            <button type="button" class="sync-pill" id="btn-sync-pill" title="6位同步码多端同步">
+            <span class="brand-name">知时课表</span>
+            <button type="button" class="sync-pill" id="btn-sync-pill" title="跨端传课表与云同步">
               <span class="sync-dot"></span>
-              <span id="sync-pill-text">本地离线 · 点此同步</span>
+              <span id="sync-pill-text">同步/备份</span>
             </button>
           </h1>
           <div class="brand-subtitle" id="header-subtitle">加载课表中...</div>
@@ -36,19 +55,20 @@
       </div>
 
       <nav class="topbar-actions" aria-label="主工具栏">
-        <button type="button" class="btn btn-primary" id="btn-open-ocr">
+        <button type="button" class="btn btn-primary hide-mobile" id="btn-open-ocr">
           <span>📸 拍照加课</span>
         </button>
-        <button type="button" class="btn btn-amber" id="btn-open-ios">
+        <button type="button" class="btn btn-amber hide-mobile" id="btn-open-ios">
           <span>📱 iPhone 提醒与组件</span>
         </button>
-        <button type="button" class="btn hide-mobile" id="btn-open-settings">
-          <span>⏰ 作息与设置</span>
+        <button type="button" class="btn" id="btn-open-settings" title="学校作息时间与个人设置">
+          <span class="hide-mobile-inline">⏰ 作息与设置</span>
+          <span class="show-mobile-inline">⚙️ 设置</span>
         </button>
         <button type="button" class="btn btn-ghost hide-mobile" id="btn-print" title="打印或导出PDF课表">
           <span>🖨️ 打印</span>
         </button>
-        <button type="button" class="btn btn-ghost" id="btn-theme-toggle" title="切换浅色/深色模式" aria-label="切换主题">
+        <button type="button" class="btn btn-ghost btn-icon-toggle" id="btn-theme-toggle" title="切换浅色/深色模式" aria-label="切换主题">
           <span id="theme-icon">🌙</span>
         </button>
       </nav>
@@ -406,7 +426,7 @@
         </div>
       </div>
 
-      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap:16px;">
+      <div class="ios-cards-grid">
         <!-- Left Card: Apple System Calendar Reminder + PWA Push -->
         <div class="card" style="background:var(--bg-canvas);">
           <h3 style="margin:0 0 6px; font-size:15.5px;">🔔 1. 苹果手机准时上课提醒（零安装首选）</h3>
