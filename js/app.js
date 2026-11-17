@@ -125,13 +125,13 @@ function renderHeader() {
   const totalWeekly = (state.schedule.lessons || []).length;
 
   document.getElementById("header-subtitle").textContent =
-    `${tName}${subj} · 第 ${weekNo} 周 · 本周共 ${totalWeekly} 节常规课`;
+    `${tName}${subj} · 第${weekNo}周 · ${totalWeekly}节课`;
 
   const pillText = document.getElementById("sync-pill-text");
   if (state.hasBackend && state.syncCode) {
-    pillText.textContent = `同步码 ${state.syncCode}`;
+    pillText.textContent = `同步 ${state.syncCode}`;
   } else {
-    pillText.textContent = "传到手机 / 备份";
+    pillText.textContent = "同步/备份";
   }
 
   document.getElementById("toggle-morning-read").classList.toggle("on", state.schedule.showMorningRead !== false);
@@ -1154,10 +1154,19 @@ function checkUpcomingReminders() {
    ========================================================================== */
 
 function applyTheme(theme) {
+  const bg = theme === "dark" ? "#161A1D" : "#FAF8F4";
   document.documentElement.setAttribute("data-theme", theme);
+  document.documentElement.style.colorScheme = theme;
+  document.documentElement.style.backgroundColor = bg;
+  if (document.body) {
+    document.body.style.backgroundColor = bg;
+  }
   localStorage.setItem(THEME_KEY, theme);
   document.getElementById("theme-icon").textContent = theme === "dark" ? "☀️" : "🌙";
-  document.getElementById("meta-theme-color").setAttribute("content", theme === "dark" ? "#14171A" : "#235E47");
+  const meta = document.getElementById("meta-theme-color");
+  if (meta) {
+    meta.setAttribute("content", bg);
+  }
 }
 
 function initEvents() {
@@ -1644,7 +1653,18 @@ async function bootstrap() {
   } catch (e) {}
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("./sw.js").catch(() => {});
+    const hadController = Boolean(navigator.serviceWorker.controller);
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (hadController && !refreshing) {
+        refreshing = true;
+        window.location.reload();
+      }
+    });
+    navigator.serviceWorker
+      .register("./sw.js")
+      .then((reg) => reg.update().catch(() => {}))
+      .catch(() => {});
   }
 
   await checkImportFromUrlHash();
