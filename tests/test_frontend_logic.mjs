@@ -138,4 +138,12 @@ assert.equal(getWeekNumber(beforeSem, "2026-09-07", 20), 1);
 const boundsBefore = getWeekNavBounds(beforeSem, schedule);
 assert.equal(boundsBefore.defaultOffset, boundsBefore.minOffset);
 
+// 8. ICS export strictly respects 20-week semester boundary (2026-09-07 .. 2027-01-24, no Feb/Mar events)
+const fullSemIcs = clientBuildIcs(schedule, 15);
+assert.ok(fullSemIcs.includes("DTSTART;TZID=Asia/Shanghai:20260907T")); // Week 1 Monday
+assert.ok(fullSemIcs.includes("DTSTART;TZID=Asia/Shanghai:20270122T")); // Week 20 Friday
+assert.equal(fullSemIcs.includes("DTSTART;TZID=Asia/Shanghai:20270125T"), false); // Week 21 Monday excluded
+assert.equal(fullSemIcs.includes("DTSTART;TZID=Asia/Shanghai:202702"), false);    // No February events
+assert.equal(fullSemIcs.includes("DTSTART;TZID=Asia/Shanghai:202703"), false);    // No March events
+
 console.log("All frontend, dynamic period, week bounds & standalone serverless tests passed!");

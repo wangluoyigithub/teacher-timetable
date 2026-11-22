@@ -138,12 +138,30 @@ def resolve_day_lessons(
     return resolved
 
 
+def _semester_date_range(schedule: dict[str, Any]) -> tuple[dt.date, dt.date] | None:
+    sem_start = schedule.get("semesterStart")
+    if not sem_start:
+        return None
+    try:
+        start_date = dt.date.fromisoformat(str(sem_start))
+    except ValueError:
+        return None
+    try:
+        total_weeks = int(schedule.get("totalWeeks") or 20)
+    except (TypeError, ValueError):
+        total_weeks = 20
+    total_weeks = max(1, min(52, total_weeks))
+    start_monday = start_date - dt.timedelta(days=start_date.weekday())
+    end_sunday = start_monday + dt.timedelta(days=total_weeks * 7 - 1)
+    return start_monday, end_sunday
+
+
 def build_ics_feed(
     schedule: dict[str, Any],
     sync_code: str = "LOCAL",
     alarm_minutes: int | None = None,
-    past_days: int = 7,
-    future_days: int = 120,
+    past_days: int | None = None,
+    future_days: int | None = None,
     reference_date: dt.date | None = None,
 ) -> str:
     """Build an RFC 5545 iCalendar string suitable for Apple Calendar webcal:// subscription."""
@@ -178,8 +196,21 @@ def build_ics_feed(
         "END:VTIMEZONE",
     ]
 
-    start_day = today - dt.timedelta(days=past_days)
-    total_days = past_days + future_days
+    sem_range = _semester_date_range(schedule)
+    if past_days is None and future_days is None and sem_range is not None:
+        start_day, end_day = sem_range
+    else:
+        p = 7 if past_days is None else past_days
+        f = 120 if future_days is None else future_days
+        start_day = today - dt.timedelta(days=p)
+        end_day = today + dt.timedelta(days=f)
+        if sem_range is not None:
+            start_day = max(start_day, sem_range[0])
+            end_day = min(end_day, sem_range[1])
+
+    total_days = (end_day - start_day).days
+    if total_days < 0:
+        total_days = -1
 
     for offset in range(total_days + 1):
         cur_date = start_day + dt.timedelta(days=offset)

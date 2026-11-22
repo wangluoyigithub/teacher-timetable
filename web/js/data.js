@@ -543,6 +543,21 @@ export function getWeekNavBounds(todayDate, schedule) {
   return { totalWeeks, rawTodayWeek, minOffset, maxOffset, defaultOffset };
 }
 
+export function getSemesterDateRange(schedule) {
+  const startStr = schedule?.semesterStart;
+  if (!startStr) return null;
+  const parts = String(startStr).split("-").map(Number);
+  if (parts.length !== 3 || parts.some((x) => !Number.isFinite(x))) return null;
+  const startMonday = getMondayOfWeek(new Date(parts[0], parts[1] - 1, parts[2]));
+  const totalWeeks = getTotalWeeks(schedule);
+  const endSunday = new Date(
+    startMonday.getFullYear(),
+    startMonday.getMonth(),
+    startMonday.getDate() + totalWeeks * 7 - 1
+  );
+  return { startMonday, endSunday, totalWeeks };
+}
+
 export function getVisiblePeriods(schedule) {
   return (schedule.periods || []).filter((p) => {
     if (schedule.showMorningRead === false && p.section === "morning_read") return false;

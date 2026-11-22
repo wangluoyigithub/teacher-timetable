@@ -122,6 +122,11 @@ class TestTeacherTimetable(unittest.TestCase):
         self.assertIn("高一(3)班 · 数学", ics_unfolded)
         self.assertIn("收周末卷子", ics_unfolded)
         self.assertIn("[代课]", ics_unfolded)
+        self.assertIn("DTSTART;TZID=Asia/Shanghai:20260907T", ics_unfolded)
+        self.assertIn("DTSTART;TZID=Asia/Shanghai:20270118T", ics_unfolded)
+        self.assertNotIn("DTSTART;TZID=Asia/Shanghai:20270125T", ics_unfolded)
+        self.assertNotIn("DTSTART;TZID=Asia/Shanghai:202702", ics_unfolded)
+        self.assertNotIn("DTSTART;TZID=Asia/Shanghai:202703", ics_unfolded)
 
         # Verify Scriptable Widget JSON & JS endpoints
         status_wj, _, raw_wj = self._req(f"/api/widget/{code}.json")
