@@ -7,6 +7,7 @@
 import {
   CLASS_PALETTES,
   formatDateISO,
+  getSemesterDateRange,
   pad2,
   resolveDayLessons
 } from "./data.js";
@@ -316,7 +317,7 @@ function icsEsc(str) {
     .replace(/\r?\n/g, "\\n");
 }
 
-export function clientBuildIcs(schedule, alarmMinutes = 15, futureDays = 110) {
+export function clientBuildIcs(schedule, alarmMinutes = 15, futureDays = null) {
   const teacher = (schedule.teacherName || "教师").trim();
   const now = new Date();
   const stamp = now.toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
@@ -331,8 +332,24 @@ export function clientBuildIcs(schedule, alarmMinutes = 15, futureDays = 110) {
     "X-APPLE-CALENDAR-COLOR:#2E6F5E"
   ];
 
-  const startDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 3);
-  for (let offset = 0; offset <= futureDays; offset++) {
+  const semRange = getSemesterDateRange(schedule);
+  let startDay;
+  let endDay;
+  if (futureDays === null && semRange) {
+    startDay = semRange.startMonday;
+    endDay = semRange.endSunday;
+  } else {
+    const span = futureDays === null ? 110 : Number(futureDays);
+    startDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 3);
+    endDay = new Date(startDay.getFullYear(), startDay.getMonth(), startDay.getDate() + span);
+    if (semRange) {
+      if (startDay < semRange.startMonday) startDay = semRange.startMonday;
+      if (endDay > semRange.endSunday) endDay = semRange.endSunday;
+    }
+  }
+
+  const totalDays = Math.round((endDay - startDay) / 86400000);
+  for (let offset = 0; offset <= totalDays; offset++) {
     const d = new Date(startDay.getFullYear(), startDay.getMonth(), startDay.getDate() + offset);
     const isoDay = d.getDay() === 0 ? 7 : d.getDay();
     if (!schedule.showWeekend && (isoDay === 6 || isoDay === 7)) {
