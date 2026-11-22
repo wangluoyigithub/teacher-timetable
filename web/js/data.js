@@ -21,6 +21,8 @@ export const SECTION_LABELS = {
   evening: "晚间/晚自习"
 };
 
+export const DEFAULT_TOTAL_WEEKS = 20;
+
 const CN_DIGITS = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
 
 export function toChineseNum(n) {
@@ -436,6 +438,7 @@ export function createInitialSchedule() {
     teacherName: "林知夏",
     defaultSubject: "数学",
     semesterStart: "2026-09-07",
+    totalWeeks: DEFAULT_TOTAL_WEEKS,
     showMorningRead: true,
     showEvening: true,
     showWeekend: false,
@@ -506,15 +509,38 @@ export function getMondayOfWeek(dateObj) {
   return d;
 }
 
-export function getWeekNumber(dateObj, semesterStartStr) {
+export function getTotalWeeks(schedule) {
+  const n = parseInt(schedule?.totalWeeks, 10);
+  if (!Number.isFinite(n) || n < 1) return DEFAULT_TOTAL_WEEKS;
+  return Math.min(52, Math.max(1, n));
+}
+
+export function getRawWeekNumber(dateObj, semesterStartStr) {
   if (!semesterStartStr) return 1;
-  const parts = semesterStartStr.split("-").map(Number);
-  if (parts.length !== 3) return 1;
+  const parts = String(semesterStartStr).split("-").map(Number);
+  if (parts.length !== 3 || parts.some((x) => !Number.isFinite(x))) return 1;
   const start = new Date(parts[0], parts[1] - 1, parts[2]);
   const mStart = getMondayOfWeek(start);
   const mCur = getMondayOfWeek(dateObj);
-  const weeks = Math.floor((mCur - mStart) / (7 * 86400000)) + 1;
-  return Math.max(1, weeks);
+  return Math.round((mCur - mStart) / (7 * 86400000)) + 1;
+}
+
+export function getWeekNumber(dateObj, semesterStartStr, totalWeeks = null) {
+  const raw = getRawWeekNumber(dateObj, semesterStartStr);
+  if (totalWeeks !== null && totalWeeks !== undefined) {
+    const maxW = Math.min(52, Math.max(1, parseInt(totalWeeks, 10) || DEFAULT_TOTAL_WEEKS));
+    return Math.min(maxW, Math.max(1, raw));
+  }
+  return Math.max(1, raw);
+}
+
+export function getWeekNavBounds(todayDate, schedule) {
+  const totalWeeks = getTotalWeeks(schedule);
+  const rawTodayWeek = getRawWeekNumber(todayDate, schedule?.semesterStart);
+  const minOffset = 1 - rawTodayWeek;
+  const maxOffset = totalWeeks - rawTodayWeek;
+  const defaultOffset = Math.min(maxOffset, Math.max(minOffset, 0));
+  return { totalWeeks, rawTodayWeek, minOffset, maxOffset, defaultOffset };
 }
 
 export function getVisiblePeriods(schedule) {

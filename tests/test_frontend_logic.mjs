@@ -1,12 +1,17 @@
 import assert from "node:assert/strict";
 import {
   DEFAULT_PERIODS_40,
+  DEFAULT_TOTAL_WEEKS,
   addSmartPeriod,
   cascadeSectionTimes,
   computeFocusState,
   createInitialSchedule,
   ensurePeriodsCoverLessons,
   generateCustomPeriods,
+  getRawWeekNumber,
+  getTotalWeeks,
+  getWeekNavBounds,
+  getWeekNumber,
   resolveDayLessons,
   toChineseNum
 } from "../web/js/data.js";
@@ -106,4 +111,31 @@ const decoded = await decodeScheduleFromHash(hashPart);
 assert.equal(decoded.teacherName, schedule.teacherName);
 assert.equal(decoded.lessons.length, schedule.lessons.length);
 
-console.log("All frontend, dynamic period & standalone serverless tests passed!");
+// 7. Semester total weeks limit (default 20 weeks, bounded navigation 1..20)
+assert.equal(DEFAULT_TOTAL_WEEKS, 20);
+assert.equal(schedule.totalWeeks, 20);
+assert.equal(getTotalWeeks({}), 20);
+assert.equal(getTotalWeeks({ totalWeeks: 18 }), 18);
+
+// Semester starts 2026-09-07 (Week 1). 2026-11-16 is Week 11.
+const boundsMid = getWeekNavBounds(monday, schedule);
+assert.equal(boundsMid.totalWeeks, 20);
+assert.equal(boundsMid.rawTodayWeek, 11);
+assert.equal(boundsMid.minOffset, -10); // Week 1
+assert.equal(boundsMid.maxOffset, 9);   // Week 20
+assert.equal(boundsMid.defaultOffset, 0);
+
+// Beyond week 20 (e.g. 2027-02-15 is Week 24) -> clamped to Week 20
+const afterSem = new Date(2027, 1, 15);
+assert.equal(getRawWeekNumber(afterSem, "2026-09-07"), 24);
+assert.equal(getWeekNumber(afterSem, "2026-09-07", 20), 20);
+const boundsAfter = getWeekNavBounds(afterSem, schedule);
+assert.equal(boundsAfter.defaultOffset, -4); // lands on Week 20
+
+// Before week 1 (e.g. 2026-08-24 is Week -1) -> clamped to Week 1
+const beforeSem = new Date(2026, 7, 24);
+assert.equal(getWeekNumber(beforeSem, "2026-09-07", 20), 1);
+const boundsBefore = getWeekNavBounds(beforeSem, schedule);
+assert.equal(boundsBefore.defaultOffset, boundsBefore.minOffset);
+
+console.log("All frontend, dynamic period, week bounds & standalone serverless tests passed!");
