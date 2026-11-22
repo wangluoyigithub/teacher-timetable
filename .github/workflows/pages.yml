@@ -20,8 +20,10 @@ jobs:
       - name: Run Python backend & ICS tests
         run: QUIET_LOGS=1 python3 -m unittest discover -s tests -v
 
-      - name: Run Node frontend & standalone serverless tests
-        run: node tests/test_frontend_logic.mjs
+      - name: Run Node frontend, standalone & Cloudflare Worker tests
+        run: |
+          node tests/test_frontend_logic.mjs
+          node tests/test_worker.mjs
 
       - name: Sync web/ directory to gh-pages branch
         run: |

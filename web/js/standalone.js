@@ -329,7 +329,19 @@ export function clientBuildIcs(schedule, alarmMinutes = 15, futureDays = null) {
     "METHOD:PUBLISH",
     `X-WR-CALNAME:${icsEsc(teacher + "的课程表")}`,
     "X-WR-TIMEZONE:Asia/Shanghai",
-    "X-APPLE-CALENDAR-COLOR:#2E6F5E"
+    "X-APPLE-CALENDAR-COLOR:#2E6F5E",
+    "REFRESH-INTERVAL;VALUE=DURATION:PT1H",
+    "X-PUBLISHED-TTL:PT1H",
+    "BEGIN:VTIMEZONE",
+    "TZID:Asia/Shanghai",
+    "X-LIC-LOCATION:Asia/Shanghai",
+    "BEGIN:STANDARD",
+    "TZOFFSETFROM:+0800",
+    "TZOFFSETTO:+0800",
+    "TZNAME:CST",
+    "DTSTART:19700101T000000",
+    "END:STANDARD",
+    "END:VTIMEZONE"
   ];
 
   const semRange = getSemesterDateRange(schedule);
