@@ -6,7 +6,10 @@
   "assets": {
     "directory": "./web",
     "binding": "ASSETS"
-  }
+  },
+  "kv_namespaces": [
+    { "binding": "TIMETABLE_KV", "id": "a538fc1292684c83b4904cf5feb821c4" }
+  ]
   // 部署后请在 Cloudflare Dashboard → Workers → teacher-timetable → Settings → Bindings
   // 添加一个 KV Namespace 绑定：
   //   Variable name: TIMETABLE_KV
