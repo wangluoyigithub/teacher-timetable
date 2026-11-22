@@ -8,6 +8,7 @@ import {
   DEFAULT_PERIODS_40,
   DEFAULT_PERIODS_45,
   DEFAULT_PERIODS_HIGH,
+  DEFAULT_TOTAL_WEEKS,
   SECTION_LABELS,
   WEEKDAY_LABELS,
   addSmartPeriod,
@@ -20,7 +21,9 @@ import {
   generateCustomPeriods,
   getClassPalette,
   getMondayOfWeek,
+  getTotalWeeks,
   getVisiblePeriods,
+  getWeekNavBounds,
   getWeekNumber,
   pad2,
   parseMinutes,
@@ -121,17 +124,25 @@ function getEffectiveNow() {
    Rendering: Header, Focus Card (Today ⇄ Tomorrow), Class Chips, Weekly Grid
    ========================================================================== */
 
+function clampWeekOffset() {
+  const { date } = getEffectiveNow();
+  const bounds = getWeekNavBounds(date, state.schedule);
+  state.weekOffset = Math.min(bounds.maxOffset, Math.max(bounds.minOffset, state.weekOffset));
+  return bounds;
+}
+
 function renderHeader() {
   const { date } = getEffectiveNow();
+  const { totalWeeks, rawTodayWeek } = clampWeekOffset();
   const viewedMonday = getMondayOfWeek(date);
   viewedMonday.setDate(viewedMonday.getDate() + state.weekOffset * 7);
-  const weekNo = getWeekNumber(viewedMonday, state.schedule.semesterStart);
+  const weekNo = getWeekNumber(viewedMonday, state.schedule.semesterStart, totalWeeks);
   const tName = state.schedule.teacherName || "老师";
   const subj = state.schedule.defaultSubject ? ` · ${state.schedule.defaultSubject}` : "";
   const totalWeekly = (state.schedule.lessons || []).length;
 
   document.getElementById("header-subtitle").textContent =
-    `${tName}${subj} · 第${weekNo}周 · ${totalWeekly}节课`;
+    `${tName}${subj} · 第${weekNo}/${totalWeeks}周 · ${totalWeekly}节课`;
 
   const pillText = document.getElementById("sync-pill-text");
   if (state.hasBackend && state.syncCode) {
@@ -144,8 +155,25 @@ function renderHeader() {
   document.getElementById("toggle-evening").classList.toggle("on", state.schedule.showEvening !== false);
   document.getElementById("toggle-weekend").classList.toggle("on", Boolean(state.schedule.showWeekend));
 
-  const suffix = state.weekOffset === 0 ? "（本周）" : (state.weekOffset > 0 ? `（+${state.weekOffset}周）` : `（${state.weekOffset}周）`);
-  document.getElementById("week-nav-label").textContent = `第 ${weekNo} 周 ${suffix}`;
+  const weekSelect = document.getElementById("week-nav-select");
+  if (weekSelect) {
+    const cacheKey = `${totalWeeks}:${rawTodayWeek}`;
+    if (weekSelect.dataset.cacheKey !== cacheKey) {
+      let opts = "";
+      for (let w = 1; w <= totalWeeks; w++) {
+        const tag = w === rawTodayWeek ? "（本周）" : "";
+        opts += `<option value="${w}">第 ${w} / ${totalWeeks} 周${tag}</option>`;
+      }
+      weekSelect.innerHTML = opts;
+      weekSelect.dataset.cacheKey = cacheKey;
+    }
+    weekSelect.value = String(weekNo);
+  }
+
+  const btnPrev = document.getElementById("btn-prev-week");
+  const btnNext = document.getElementById("btn-next-week");
+  if (btnPrev) btnPrev.disabled = weekNo <= 1;
+  if (btnNext) btnNext.disabled = weekNo >= totalWeeks;
 }
 
 function renderMobileDayStrip() {
@@ -1160,6 +1188,8 @@ function openSettingsModal() {
   document.getElementById("inp-set-teacher").value = state.schedule.teacherName || "";
   document.getElementById("inp-set-subject").value = state.schedule.defaultSubject || "";
   document.getElementById("inp-set-semstart").value = state.schedule.semesterStart || "2026-09-07";
+  const elTotalWeeks = document.getElementById("inp-set-totalweeks");
+  if (elTotalWeeks) elTotalWeeks.value = String(getTotalWeeks(state.schedule));
   draftPeriods = structuredClone(state.schedule.periods || DEFAULT_PERIODS_45);
   syncGeneratorControlsFromDraft();
   renderSettingsPeriodsTable();
@@ -1388,10 +1418,28 @@ function initEvents() {
     renderWeeklyGrid();
   });
 
-  document.getElementById("btn-prev-week").addEventListener("click", () => { state.weekOffset -= 1; renderAll(); });
-  document.getElementById("btn-next-week").addEventListener("click", () => { state.weekOffset += 1; renderAll(); });
+  document.getElementById("btn-prev-week").addEventListener("click", () => {
+    const { minOffset } = getWeekNavBounds(getEffectiveNow().date, state.schedule);
+    if (state.weekOffset <= minOffset) return;
+    state.weekOffset = Math.max(minOffset, state.weekOffset - 1);
+    renderAll();
+  });
+  document.getElementById("btn-next-week").addEventListener("click", () => {
+    const { maxOffset } = getWeekNavBounds(getEffectiveNow().date, state.schedule);
+    if (state.weekOffset >= maxOffset) return;
+    state.weekOffset = Math.min(maxOffset, state.weekOffset + 1);
+    renderAll();
+  });
+  document.getElementById("week-nav-select")?.addEventListener("change", (e) => {
+    const targetWeek = parseInt(e.target.value, 10);
+    if (!Number.isFinite(targetWeek)) return;
+    const { rawTodayWeek, minOffset, maxOffset } = getWeekNavBounds(getEffectiveNow().date, state.schedule);
+    state.weekOffset = Math.min(maxOffset, Math.max(minOffset, targetWeek - rawTodayWeek));
+    renderAll();
+  });
   document.getElementById("btn-reset-week").addEventListener("click", () => {
-    state.weekOffset = 0;
+    const { defaultOffset } = getWeekNavBounds(getEffectiveNow().date, state.schedule);
+    state.weekOffset = defaultOffset;
     state.selectedMobileDateISO = null;
     renderAll();
   });
@@ -1806,12 +1854,17 @@ function initEvents() {
     state.schedule.teacherName = document.getElementById("inp-set-teacher").value.trim() || "老师";
     state.schedule.defaultSubject = document.getElementById("inp-set-subject").value.trim();
     state.schedule.semesterStart = document.getElementById("inp-set-semstart").value || "2026-09-07";
+    const totalWeeksVal = parseInt(document.getElementById("inp-set-totalweeks")?.value, 10);
+    state.schedule.totalWeeks = Number.isFinite(totalWeeksVal)
+      ? Math.min(52, Math.max(1, totalWeeksVal))
+      : DEFAULT_TOTAL_WEEKS;
     state.schedule.periods = structuredClone(draftPeriods);
     if (draftPeriods.some((p) => p.section === "morning_read")) state.schedule.showMorningRead = true;
     if (draftPeriods.some((p) => p.section === "evening")) state.schedule.showEvening = true;
+    clampWeekOffset();
     saveSchedule();
     closeModal("modal-settings");
-    showToast(`✅ 已保存学校作息（共 ${draftPeriods.length} 个时段）与个人设置`);
+    showToast(`✅ 已保存设置（共 ${state.schedule.totalWeeks} 周 · ${draftPeriods.length} 个时段）`);
   });
 
   document.getElementById("btn-export-json").addEventListener("click", () => {

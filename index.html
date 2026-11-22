@@ -110,7 +110,7 @@
       <div class="grid-toolbar">
         <div class="week-nav">
           <button type="button" class="btn btn-sm" id="btn-prev-week" aria-label="上一周">◀</button>
-          <span class="week-label" id="week-nav-label">第 1 周</span>
+          <select class="week-select" id="week-nav-select" aria-label="选择周次"></select>
           <button type="button" class="btn btn-sm" id="btn-next-week" aria-label="下一周">▶</button>
           <button type="button" class="btn btn-ghost btn-sm" id="btn-reset-week">回到本周</button>
         </div>
@@ -531,8 +531,15 @@
           <input class="input" type="text" id="inp-set-subject" placeholder="如：数学" />
         </div>
         <div class="form-field">
-          <label for="inp-set-semstart">本学期第一周周一日期（用于计算第几周与单双周）</label>
-          <input class="input" type="date" id="inp-set-semstart" />
+          <label for="inp-set-semstart">本学期第一周周一日期与总周数（默认 20 周）</label>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <input class="input" type="date" id="inp-set-semstart" style="flex:1; min-width:0;" />
+            <label style="display:inline-flex; align-items:center; gap:4px; font-size:12.5px; color:var(--ink-secondary); white-space:nowrap; margin:0;">
+              <span>共</span>
+              <input class="input" type="number" id="inp-set-totalweeks" min="1" max="52" value="20" style="width:68px; text-align:center;" aria-label="本学期总周数" />
+              <span>周</span>
+            </label>
+          </div>
         </div>
         <div class="form-field">
           <label>常用学校作息预设模板</label>

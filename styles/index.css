@@ -273,6 +273,13 @@ button {
   transform: scale(0.98);
 }
 
+.btn:disabled {
+  opacity: 0.36;
+  cursor: not-allowed;
+  transform: none;
+  pointer-events: none;
+}
+
 .btn-primary {
   background: var(--brand);
   color: #FFFFFF;
@@ -734,6 +741,27 @@ button {
   font-weight: 700;
   min-width: 132px;
   text-align: center;
+}
+
+.week-select {
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--ink-primary);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-xs);
+  padding: 4px 10px;
+  min-width: 138px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.week-select:hover,
+.week-select:focus {
+  border-color: var(--brand);
+  outline: none;
 }
 
 .grid-toggles {
